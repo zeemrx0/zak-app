@@ -42,7 +42,7 @@ function globalTarget(name, env = process.env) {
     rootDir = env.CLAUDE_CONFIG_DIR ? absolute(env.CLAUDE_CONFIG_DIR, "CLAUDE_CONFIG_DIR") : path.join(home, ".claude");
     skillsRoot = path.join(rootDir, "skills");
   }
-  return { name, scope: "user", rootDir, skillsRoot, skills: "skills", rules: ["omp", "pi"].includes(name) ? "rules" : "z-rules", startup: name === "omp" || name === "codex" ? "AGENTS.md" : name === "pi" ? "APPEND_SYSTEM.md" : "rules/z-global.md", lock: "zak-lock.json", guard: "z-global-operation.lock", marker: `.${name}/z-project.json`, invocation: name === "codex" ? "$" : name === "claude" ? "/" : "/skill:" };
+  return { name, scope: "user", rootDir, skillsRoot, skills: "skills", rules: name === "codex" ? "z-rules" : "rules", startup: name === "omp" || name === "codex" ? "AGENTS.md" : name === "pi" ? "APPEND_SYSTEM.md" : undefined, lock: "zak-lock.json", guard: "z-global-operation.lock", marker: `.${name}/z-project.json`, invocation: name === "codex" ? "$" : name === "claude" ? "/" : "/skill:" };
 }
 function hostTarget(name) {
   if (!["codex", "claude"].includes(name))
@@ -52,12 +52,12 @@ function hostTarget(name) {
     name,
     root,
     skills: name === "codex" ? ".agents/skills" : ".claude/skills",
-    rules: `${root}/z-rules`,
+    rules: name === "codex" ? `${root}/z-rules` : `${root}/rules`,
     agents: `${root}/agents`,
     marker: `${root}/z-project.json`,
     lock: `${root}/zak-lock.json`,
     guard: `${root}/z-operation.lock`,
-    startup: name === "codex" ? "AGENTS.md" : ".claude/rules/z-project.md",
+    startup: name === "codex" ? "AGENTS.md" : undefined,
     invocation: name === "codex" ? "$" : "/",
   };
 }
