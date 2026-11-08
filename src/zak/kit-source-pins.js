@@ -6,7 +6,7 @@ const { validateSource } = require('../release/release-download');
 const { STABLE, BETA } = require('../release/release-metadata');
 const { privateDirectory, readPrivate, writePrivate } = require('./kit-private-state');
 function validateDescriptor(value) {
-  if (!value || value.schema !== 1 || !['omp', 'pi', 'codex', 'claude'].includes(value.host) ||
+  if (!value || value.schema !== 1 || !['codex', 'claude'].includes(value.host) ||
       !['project', 'global'].includes(value.scope) ||
       (value.scope === 'global' ? value.project !== null : !path.isAbsolute(value.project || '')) ||
       ['controlRoot', 'skillsRoot', 'lockPath'].some(key => typeof value[key] !== 'string' || !path.isAbsolute(value[key])))

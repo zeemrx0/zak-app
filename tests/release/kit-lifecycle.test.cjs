@@ -14,7 +14,7 @@ function fixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const env = { HOME: root }, pins = new Map(), events = [];
   const key = descriptor => JSON.stringify(descriptor);
-  const descriptor = resolveTarget({ host: 'pi', scope: 'project', project: root, env });
+  const descriptor = resolveTarget({ host: 'claude', scope: 'project', project: root, env });
   const handle = { pkg: '/fixture', snapshot, cleanup() { events.push('cleanup'); } };
   const deps = {
     readPin(d) { return pins.get(key(d)) || null; },
@@ -32,7 +32,7 @@ function fixture(t) {
   };
   function pin(overrides = {}) { pins.set(key(descriptor), { schema: 1, descriptor, source, snapshot,
     state: 'installed', operation: 'install', ...overrides }); }
-  function run(operation, options = {}, args = [root, '--target', 'pi']) {
+  function run(operation, options = {}, args = [root, '--target', 'claude']) {
     return kitLifecycle(operation, options, args, config, env, deps);
   }
   return { root, env, descriptor, pins, events, deps, pin, run };
@@ -84,7 +84,7 @@ test('release access failures try another account before installer mutation', as
   }
 });
 test('source parser removes repository selection and preserves omitted defaults', () => {
-  assert.deepEqual(sourceArgs(['--target', 'pi']), { source: {}, rest: ['--target', 'pi'] });
+  assert.deepEqual(sourceArgs(['--target', 'claude']), { source: {}, rest: ['--target', 'claude'] });
   for (const args of [['--repo', 'fixture/kit'], ['--repo=fixture/kit']]) assert.throws(() => sourceArgs(args), /no longer/);
   assert.throws(() => sourceArgs(['--channel', 'beta', '--channel', 'stable']), /repeated/);
   assert.throws(() => sourceArgs(['--transport', 'ssh']), /transport/);
@@ -108,7 +108,7 @@ test('pinned lifecycle never rediscovers after account changes', async t => {
 test('check and dry-run never write source state or acquire persistent locks', async t => {
   for (const [operation, dry] of [['check', false], ['install', true], ['update', true], ['uninstall', true]]) {
     const f = fixture(t); f.pin();
-    assert.equal(await f.run(operation, {}, [f.root, '--target', 'pi', ...(dry ? ['--dry-run'] : [])]), 0);
+    assert.equal(await f.run(operation, {}, [f.root, '--target', 'claude', ...(dry ? ['--dry-run'] : [])]), 0);
     assert.equal(f.events.includes('lock'), false);
     assert.equal(f.events.includes('pending'), false); assert.equal(f.events.includes('removed'), false);
   }
@@ -122,7 +122,7 @@ test('CLI-owned circular selection preserves apply flags in project and global s
   for (const global of [false, true]) {
     for (const [operation, flag] of [['install', null], ['update', '--update'], ['check', '--check'], ['uninstall', '--uninstall']]) {
       const f = fixture(t), calls = [];
-      const descriptor = resolveTarget({ host: 'pi', scope: global ? 'global' : 'project', project: f.root, env: f.env });
+      const descriptor = resolveTarget({ host: 'claude', scope: global ? 'global' : 'project', project: f.root, env: f.env });
       f.pins.set(JSON.stringify(descriptor), { schema: 1, descriptor, source, snapshot, state: 'installed', operation: 'install' });
       const normal = f.deps.runControlled;
       f.deps.runControlled = async (pkg, args, callbacks) => {
@@ -130,20 +130,20 @@ test('CLI-owned circular selection preserves apply flags in project and global s
         if (callbacks.mode === 'select') {
           assert.equal(f.events.includes('pending'), false);
           assert.equal(f.events.includes('mutate'), false);
-          return { code: 0, targets: ['pi'] };
+          return { code: 0, targets: ['claude'] };
         }
         return normal(pkg, args, callbacks);
       };
       f.deps.selectInstalledTargets = async (hosts, options = {}) => {
-        assert.deepEqual(hosts, operation === 'update' ? ['pi'] : ['omp', 'pi', 'codex', 'claude']);
+        assert.deepEqual(hosts, operation === 'update' ? ['claude'] : ['codex', 'claude']);
         assert.equal(options.operation || 'update', operation);
         assert.equal(f.events.includes('pending'), false);
-        return { code: 0, targets: ['pi'] };
+        return { code: 0, targets: ['claude'] };
       };
       const args = [global ? '--global' : f.root, '--tier', 'general'];
       assert.equal(await f.run(operation, {}, args), 0);
       assert.deepEqual(calls, [
-        { args: [...args, '--target', 'pi', ...(flag ? [flag, ...(['update', 'uninstall'].includes(operation) ? ['--force'] : [])] : [])], mode: 'apply' },
+        { args: [...args, '--target', 'claude', ...(flag ? [flag, ...(['update', 'uninstall'].includes(operation) ? ['--force'] : [])] : [])], mode: 'apply' },
       ]);
     }
   }
@@ -156,7 +156,7 @@ test('cancelled interactive update does not apply or write pending state', async
   }
   const f = fixture(t); f.pin();
   f.deps.selectInstalledTargets = async hosts => {
-    assert.deepEqual(hosts, ['pi']);
+    assert.deepEqual(hosts, ['claude']);
     return { code: 130, targets: [] };
   };
   assert.equal(await f.run('update', {}, [f.root]), 130);
@@ -177,7 +177,7 @@ test('all target pickers cancel before source access or mutation', async t => {
 });
 test('invalid target selections cannot cross the apply boundary', async t => {
   interactive(t);
-  for (const targets of [null, [], ['pi', 'pi'], ['unknown']]) {
+  for (const targets of [null, [], ['claude', 'claude'], ['unknown']]) {
     const f = fixture(t);
     f.deps.selectInstalledTargets = async () => ({ code: 0, targets });
     await assert.rejects(f.run('uninstall', {}, [f.root]), /invalid kit selection/);
@@ -200,15 +200,13 @@ test('empty post-uninstall roots and unrelated host configuration are not legacy
   assert.equal(fs.readFileSync(path.join(f.descriptor.controlRoot, 'auth.json'), 'utf8'), '{"fixture":true}');
 });
 test('reinstall accepts empty namespaced directory trees after successful uninstall', async t => {
-  for (const host of ['pi', 'omp', 'codex', 'claude']) {
+  for (const host of ['codex', 'claude']) {
     for (const scope of ['project', 'global']) {
       const f = fixture(t);
       const descriptor = resolveTarget({ host, scope, project: f.root, env: f.env });
       const args = [scope === 'global' ? '--global' : f.root, '--target', host];
       const skill = path.join(descriptor.skillsRoot, 'z-html-style', 'references', 'styles');
-      const extension = path.join(descriptor.controlRoot, 'extensions', 'z-agent-kit');
       fs.mkdirSync(skill, { recursive: true });
-      fs.mkdirSync(extension, { recursive: true });
       f.pins.set(JSON.stringify(descriptor), { schema: 1, descriptor, source, snapshot, state: 'installed', operation: 'install' });
       assert.equal(await f.run('uninstall', {}, args), 0);
       assert.equal(f.pins.size, 0);
@@ -281,14 +279,17 @@ function seed(f, host, scope, state = 'installed', operation = 'install') {
 }
 test('automatic update lists only installed hosts within the requested scope', async t => {
   interactive(t);
-  for (const scope of ['project', 'global']) {
+  for (const [scope, state, operation, expected] of [
+    ['project', 'installed', 'install', ['codex', 'claude']],
+    ['global', 'pending', 'update', ['codex']],
+    ['project', 'cleanup-required', 'uninstall', ['codex']],
+  ]) {
     const f = fixture(t), calls = [];
-    seed(f, 'pi', scope); seed(f, 'codex', scope);
-    seed(f, 'omp', scope, 'pending', 'update'); seed(f, 'claude', scope, 'cleanup-required', 'uninstall');
+    seed(f, 'codex', scope); seed(f, 'claude', scope, state, operation);
     seed(f, 'claude', scope === 'global' ? 'project' : 'global');
     f.deps.pinnedSnapshot = () => { throw Error('old picker must not run'); };
     f.deps.selectInstalledTargets = async hosts => {
-      assert.deepEqual(hosts, ['pi', 'codex']);
+      assert.deepEqual(hosts, expected);
       return { code: 0, targets: hosts };
     };
     const normal = f.deps.runControlled;
@@ -298,13 +299,13 @@ test('automatic update lists only installed hosts within the requested scope', a
     };
     const args = [scope === 'global' ? '--global' : f.root, '--tier', 'general', '--force'];
     assert.equal(await f.run('update', {}, args), 0);
-    assert.deepEqual(calls, ['pi', 'codex'].map(host => [...args, '--target', host, '--update']));
+    assert.deepEqual(calls, expected.map(host => [...args, '--target', host, '--update']));
   }
 });
 test('empty update scope is a no-op without locking, prompting or fetching', async t => {
   const f = fixture(t), messages = [], previous = console.log;
   console.log = message => messages.push(message); t.after(() => { console.log = previous; });
-  seed(f, 'pi', 'global'); seed(f, 'omp', 'project', 'pending', 'update');
+  seed(f, 'codex', 'global'); seed(f, 'codex', 'project', 'pending', 'update');
   seed(f, 'claude', 'project', 'cleanup-required', 'uninstall');
   f.deps.selectInstalledTargets = () => { throw Error('must not prompt'); };
   assert.equal(await f.run('update', {}, [f.root, '--json']), 0);
@@ -334,7 +335,7 @@ test('automatic update fails closed on unsafe receipts or invalid selection', as
   await assert.rejects(f.run('update', {}, [f.root]), /invalid installed source receipt/);
   assert.deepEqual(f.events, []);
   const other = fixture(t); other.pin();
-  other.deps.selectInstalledTargets = async () => ({ code: 0, targets: ['omp'] });
+  other.deps.selectInstalledTargets = async () => ({ code: 0, targets: ['codex'] });
   await assert.rejects(other.run('update', {}, [other.root]), /invalid installed kit selection/);
   assert.deepEqual(other.events, ['lock', 'unlock']);
 });
@@ -346,6 +347,22 @@ test('mixed-source targets use their own generations and preserve a successful t
   const generations = []; f.deps.pinnedSnapshot = pin => { generations.push(pin.snapshot.id); return { pkg: '/fixture', snapshot: pin.snapshot, cleanup() {} }; };
   const normal = f.deps.runControlled;
   f.deps.runControlled = (pkg, args, callbacks) => callbacks.descriptor.host === 'codex' ? Promise.reject(Error('failed')) : normal(pkg, args, callbacks);
-  assert.equal(await f.run('uninstall', {}, [f.root, '--target', 'pi,codex']), 1);
+  assert.equal(await f.run('uninstall', {}, [f.root, '--target', 'claude,codex']), 1);
   assert.deepEqual(generations, ['a'.repeat(64), 'b'.repeat(64)]); assert.equal(f.pins.size, 1);
+});
+test('removed OMP and Pi targets fail with a clear message and a supported-target list', () => {
+  for (const [host, name, dir] of [['omp', 'OMP', '.omp/'], ['pi', 'Pi', '.pi/']]) {
+    for (const value of [host, `claude,${host}`]) {
+      assert.throws(() => targetArgs(['--target', value]),
+        { message: `${name} support was removed; supported targets: claude, codex. Remove an existing ${dir} install with an earlier zak/zAgentKit release or delete it manually.` });
+    }
+  }
+  assert.throws(() => targetArgs(['--target', 'unknown']), /invalid kit targets/);
+});
+test('removed targets stop before any lock, download, or prompt', async t => {
+  for (const host of ['omp', 'pi']) {
+    const f = fixture(t);
+    await assert.rejects(f.run('install', {}, [f.root, '--target', host]), /support was removed; supported targets: claude, codex/);
+    assert.deepEqual(f.events, []);
+  }
 });

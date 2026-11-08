@@ -66,7 +66,7 @@ test('preferred sources resolve to the expected identity', t => {
 test('update switches an installed remote pin to the selected local source', async t => {
   const h = home(t);
   writePreference({ schema: 1, kind: 'local', path: h.kit }, h.env);
-  const descriptor = resolveTarget({ host: 'pi', scope: 'project', project: h.root, env: h.env });
+  const descriptor = resolveTarget({ host: 'codex', scope: 'project', project: h.root, env: h.env });
   const remote = { repository: 'fixture/public-kit', transport: 'curl', channel: 'stable', distribution: 'public' };
   const snapshot = { id: 'a'.repeat(64), tag: 'v1.0.0', files: {} };
   let pin = { schema: 1, descriptor, source: remote, snapshot, state: 'installed', operation: 'install' }, used;
@@ -80,7 +80,7 @@ test('update switches an installed remote pin to the selected local source', asy
       return { code: 0 };
     },
   };
-  assert.equal(await kitLifecycle('update', {}, [h.root, '--target', 'pi', '--json'], config, h.env, deps), 0);
+  assert.equal(await kitLifecycle('update', {}, [h.root, '--target', 'codex', '--json'], config, h.env, deps), 0);
   assert.equal(used.distribution, 'local');
   assert.equal(pin.source.path, h.kit);
   assert.equal(pin.state, 'installed');

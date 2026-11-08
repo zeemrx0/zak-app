@@ -17,7 +17,7 @@ async function main() {
   }
   const result = require('../src/zak/cli-install').installCli(source, renderBootstrap(source, digest), releaseRepository(require(path.join(source, 'package.json'))), 'curl');
   ui.success(`zak ${result.version} ${result.changed ? 'installed' : 'already installed'}: ${result.launcher}`);
-  ui.info('Add $HOME/.local/bin to PATH. Run zak kit install --target pi.');
+  ui.info('Add $HOME/.local/bin to PATH. Run zak kit install --target claude,codex.');
   return 0;
 }
 main().then(code => { process.exitCode = code; }).catch(error => { ui.error(`install-zak: ${error.message}`); process.exitCode = 1; });

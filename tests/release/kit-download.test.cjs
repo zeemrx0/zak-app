@@ -9,9 +9,9 @@ const { hash } = require('../../src/zak/cli-safety');
 const { sourceArgs } = require('../../src/zak/zak-cli');
 
 test('source parsing preserves kit options and rejects ambiguous sources', () => {
-  const parsed = sourceArgs(['--transport', 'gh', '--channel', 'beta', '/project with spaces', '--target', 'pi']);
+  const parsed = sourceArgs(['--transport', 'gh', '--channel', 'beta', '/project with spaces', '--target', 'codex']);
   assert.deepEqual(parsed.source, { transport: 'gh', channel: 'beta' });
-  assert.deepEqual(parsed.rest, ['/project with spaces', '--target', 'pi']);
+  assert.deepEqual(parsed.rest, ['/project with spaces', '--target', 'codex']);
   assert.deepEqual(sourceArgs([]).source, {});
   assert.throws(() => sourceArgs(['--repo', 'a/b']), /no longer supported/);
   assert.throws(() => sourceArgs(['--repo=a/b']), /no longer supported/);

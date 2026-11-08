@@ -62,10 +62,10 @@ process.stdout.write(JSON.stringify(body));`, { mode: 0o755 });
   const env = { ...process.env, HOME: home, PATH: bin + ':' + process.env.PATH, GH_FIXTURE: root,
     GH_TOKEN: TOKEN, GITHUB_TOKEN: TOKEN };
   for (const key of ['XDG_DATA_HOME', 'ZAK_ROOT', 'ZAK_RELEASE_API_URL', 'ZAK_RELEASE_BASE_URL',
-    'PI_CODING_AGENT_DIR', 'PI_CONFIG_DIR', 'OMP_PROFILE', 'PI_PROFILE', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
+    'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
   const cli = path.join(pkg, 'scripts/zak.cjs');
   function command(operation, extra = [], overrides = {}, target = project) {
-    return runZak(cli, ['kit', operation, target, '--target', 'omp', '--json', ...extra], { ...env, ...overrides }, project);
+    return runZak(cli, ['kit', operation, target, '--target', 'claude', '--json', ...extra], { ...env, ...overrides }, project);
   }
   return { root, home, project, pkg, env, command, state: path.join(home, '.local/share/zak-kit-sources'),
     calls: () => fs.readFileSync(path.join(root, 'calls.log'), 'utf8').trim().split('\n') };
@@ -82,7 +82,7 @@ test('packaged private lifecycle pins exact source, preserves read-only state, a
   const pin = JSON.parse(before);
   assert.equal(pin.source.repository, CANARY); assert.equal(pin.source.repositoryId, 11); assert.equal(pin.state, 'installed');
   assert.equal(fs.statSync(f.state).mode & 0o777, 0o700); assert.equal(fs.statSync(receipt).mode & 0o777, 0o600);
-  const lock = path.join(f.project, '.omp/zak-lock.json'), lockBefore = fs.readFileSync(lock), calls = f.calls().length;
+  const lock = path.join(f.project, '.claude/zak-lock.json'), lockBefore = fs.readFileSync(lock), calls = f.calls().length;
   for (const [operation, extra] of [['check', []], ['install', ['--dry-run']], ['uninstall', ['--dry-run']]]) {
     const result = await f.command(operation, extra, { FIXTURE_AUTH: 'expired' });
     assert.equal(result.code, 0, result.output); noLeaks(result);

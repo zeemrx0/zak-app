@@ -6,14 +6,14 @@ const path = require('node:path');
 const { kitLifecycle } = require('../../src/zak/kit-lifecycle');
 const { resolveTarget } = require('../../src/zak/kit-target-locator');
 const KIT = process.env.ZAK_TARGET_KIT_SOURCE;
-for (const host of ['omp', 'pi', 'codex', 'claude']) for (const scope of ['project', 'global'])
+for (const host of ['codex', 'claude']) for (const scope of ['project', 'global'])
 test(`zak force policy restores and removes edited ${host} ${scope} files`, { skip: !KIT }, async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-force-live-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const home = path.join(root, 'home'), project = path.join(root, 'project');
   fs.mkdirSync(home); fs.mkdirSync(project);
   const env = { ...process.env, HOME: home };
-  for (const key of ['XDG_DATA_HOME', 'PI_CODING_AGENT_DIR', 'PI_CONFIG_DIR', 'OMP_PROFILE', 'PI_PROFILE', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
+  for (const key of ['XDG_DATA_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
   const descriptor = resolveTarget({ host, scope, project, env });
   const source = { repository: 'fixture/kit', distribution: 'public', transport: 'curl', channel: 'stable' };
   const handle = { pkg: KIT, snapshot: { id: 'a'.repeat(64), tag: 'v1.0.0', files: {} }, cleanup() {} };

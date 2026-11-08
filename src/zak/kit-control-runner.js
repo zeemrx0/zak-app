@@ -34,8 +34,8 @@ function runControlled(pkg, args, { mode = 'apply', env = process.env, descripto
         if (!packet || packet.schema !== 1 || packet.sequence !== nextSequence++ ||
             Buffer.byteLength(JSON.stringify(packet)) > 65536) throw error();
         if (mode === 'select' && packet.kind === 'selection' && !targets) {
-          if (!Array.isArray(packet.targets) || !packet.targets.length || packet.targets.length > 4 ||
-              packet.targets.some(host => !['omp', 'pi', 'codex', 'claude'].includes(host)) ||
+          if (!Array.isArray(packet.targets) || !packet.targets.length || packet.targets.length > 2 ||
+              packet.targets.some(host => !['codex', 'claude'].includes(host)) ||
               new Set(packet.targets).size !== packet.targets.length) throw error();
           targets = packet.targets;
         } else if (mode === 'apply' && packet.kind === 'prepare' && !prepared) {

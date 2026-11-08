@@ -23,16 +23,16 @@ If no beta release is available, installation stops instead of using a stable re
 ## 2. Manage a kit
 
 ```sh
-zak kit install --target omp,codex --tier general
-zak update --target omp,codex --tier general
-zak kit check --target omp,codex --tier general
-zak kit uninstall --target omp,codex
+zak kit install --target claude,codex --tier general
+zak update --target claude,codex --tier general
+zak kit check --target claude,codex --tier general
+zak kit uninstall --target claude,codex
 ```
 
 `zak update` is an alias for `zak kit update`. Both commands accept the same
 options and update only the kit, not the CLI.
 
-Supported targets are `omp`, `pi`, `codex`, and `claude`.
+Supported targets are `claude` and `codex`.
 Omit `--target` to use the interactive picker.
 
 For private kit access, install GitHub CLI (`gh`) and authenticate with an account

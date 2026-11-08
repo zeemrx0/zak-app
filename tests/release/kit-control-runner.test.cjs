@@ -8,7 +8,7 @@ const { resolveTarget } = require('../../src/zak/kit-target-locator');
 function fixture(t, body) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-control-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const env = { HOME: root }, descriptor = resolveTarget({ host: 'pi', scope: 'project', project: root, env });
+  const env = { HOME: root }, descriptor = resolveTarget({ host: 'codex', scope: 'project', project: root, env });
   const pkg = path.join(root, 'package');
   fs.mkdirSync(path.join(pkg, 'scripts'), { recursive: true });
   fs.mkdirSync(path.join(pkg, 'src/installer/cli'), { recursive: true });
@@ -53,7 +53,7 @@ test('missing protocol and wrong descriptors cannot mutate a target', async t =>
   assert.throws(() => runControlled(f.pkg, [], { env: f.env, descriptor: f.descriptor }), /protocol/);
   assert.equal(fs.existsSync(f.descriptor.controlRoot), false);
   fs.writeFileSync(path.join(f.pkg, 'package.json'), JSON.stringify({ kitControlProtocol: 1 }));
-  await assert.rejects(runControlled(f.pkg, [], { env: f.env, descriptor: { ...f.descriptor, host: 'omp' },
+  await assert.rejects(runControlled(f.pkg, [], { env: f.env, descriptor: { ...f.descriptor, host: 'claude' },
     onPrepare() { throw Error('must not reach'); }, onResult() {} }), /controlled kit failed/);
   assert.equal(fs.existsSync(f.descriptor.controlRoot), false);
 });
@@ -66,9 +66,9 @@ test('failed result commit retains earlier pending intent and reports failure', 
 });
 test('selection-only mode returns hosts without preparing or changing a target', async t => {
   const f = fixture(t, `process.on('message',()=>process.disconnect());
-process.send({schema:1,kind:'selection',sequence:1,targets:['pi','codex']});`);
+process.send({schema:1,kind:'selection',sequence:1,targets:['claude','codex']});`);
   const result = await runControlled(f.pkg, [], { env: f.env, mode: 'select' });
-  assert.deepEqual(result.targets, ['pi', 'codex']); assert.equal(fs.existsSync(f.descriptor.controlRoot), false);
+  assert.deepEqual(result.targets, ['claude', 'codex']); assert.equal(fs.existsSync(f.descriptor.controlRoot), false);
 });
 test('rejected children cannot hang recovery by ignoring termination', { timeout: 5000 }, async t => {
   const f = fixture(t, `process.on('SIGTERM',()=>{});setInterval(()=>{},1000);

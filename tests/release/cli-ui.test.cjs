@@ -47,8 +47,8 @@ test('session endings use the supplied stream for success, failure, and cancella
   }
 });
 test('focus and circular checkbox selection remain independent and toggles are reversible', async () => {
-  const f = fixture(true), pending = selectInstalledTargets(['pi', 'codex'], f);
-  assert.match(f.text(), /❯ ○ Pi/);
+  const f = fixture(true), pending = selectInstalledTargets(['claude', 'codex'], f);
+  assert.match(f.text(), /❯ ○ Claude Code/);
   f.input.write('\x1b[B');
   assert.match(f.text(), /❯ ○ Codex/);
   f.input.write(' ');
@@ -56,18 +56,18 @@ test('focus and circular checkbox selection remain independent and toggles are r
   f.input.write(' ');
   assert.ok(f.text().lastIndexOf('❯ ○ Codex') > f.text().lastIndexOf('❯ ● Codex'));
   f.input.write('\x1b[A \r');
-  assert.deepEqual(await pending, { code: 0, targets: ['pi'] });
+  assert.deepEqual(await pending, { code: 0, targets: ['claude'] });
 });
 test('narrow terminal rendering keeps circular options selectable', async () => {
   const f = fixture(true); f.output.columns = 24;
-  const pending = selectInstalledTargets(['pi', 'claude'], f);
+  const pending = selectInstalledTargets(['codex', 'claude'], f);
   assert.match(f.text(), /○/);
   f.input.write('\x1b[B \r');
   assert.deepEqual(await pending, { code: 0, targets: ['claude'] });
 });
 test('input errors propagate and restore raw mode and listeners', async () => {
   const f = fixture(true); f.input.isRaw = true;
-  const pending = selectInstalledTargets(['pi'], f);
+  const pending = selectInstalledTargets(['codex'], f);
   const rejected = assert.rejects(pending, /fixture input failure/);
   f.input.emit('error', new Error('fixture input failure'));
   await rejected;
@@ -77,7 +77,7 @@ test('input errors propagate and restore raw mode and listeners', async () => {
   assert.equal(f.output.listenerCount('resize'), 0);
 });
 test('Escape cancels the picker without selecting the focused agent', async () => {
-  const f = fixture(true), pending = selectInstalledTargets(['pi'], f);
+  const f = fixture(true), pending = selectInstalledTargets(['codex'], f);
   f.input.write('\x1b');
   assert.deepEqual(await pending, { code: 130, targets: [] });
   assert.equal(f.input.isRaw, false);

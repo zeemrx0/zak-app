@@ -29,7 +29,7 @@ test('Node baseline compares full version and rejects malformed versions', () =>
   for (const version of ['26.11.1', '26.12.0', '27.0.0']) assert.doesNotThrow(() => assertNode(version));
 });
 test('kit command mapping rejects bootstrap and contradictory lifecycle flags', () => {
-  const args = ['/project with spaces', '--target', 'omp,codex', '--json'];
+  const args = ['/project with spaces', '--target', 'claude,codex', '--json'];
   assert.deepEqual(kitArgs('install', args), args);
   for (const [operation, flag] of [['update', '--update'], ['check', '--check'], ['uninstall', '--uninstall']])
     assert.deepEqual(kitArgs(operation, args), [...args, flag]);
@@ -53,8 +53,8 @@ test('update alias preserves kit update dispatch, validation, help, and exit cod
   const config = require(path.join(root, 'package.json')).kitSourceConfig;
   for (const options of [
     [],
-    ['/project with spaces', '--target', 'omp,codex', '--tier', 'general', '--json', '--force', '--dry-run'],
-    ['--global', '--target', 'pi', '--tier', 'general', '--channel', 'beta', '--transport', 'gh'],
+    ['/project with spaces', '--target', 'claude,codex', '--tier', 'general', '--json', '--force', '--dry-run'],
+    ['--global', '--target', 'codex', '--tier', 'general', '--channel', 'beta', '--transport', 'gh'],
   ]) {
     const argv = ['update', ...options];
     assert.equal(await main(argv, root), 7);
@@ -84,7 +84,7 @@ test('update alias preserves kit update dispatch, validation, help, and exit cod
 });
 test('CLI install is byte-idempotent and self-uninstall leaves kit files', t => {
   const f = fixture(t), result = f.install();
-  const marker = path.join(f.home, '.omp', 'user-kit');
+  const marker = path.join(f.home, '.claude', 'user-kit');
   fs.mkdirSync(path.dirname(marker)); fs.writeFileSync(marker, 'installed guidance');
   const receipt = fs.readFileSync(path.join(result.root, 'receipt.json'));
   assert.equal(f.install().changed, false);

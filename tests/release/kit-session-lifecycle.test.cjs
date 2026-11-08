@@ -24,8 +24,8 @@ test('public multi-host lifecycle closes only after every controlled child', asy
     },
     finishKitSession: code => events.push(['end', code]),
   };
-  assert.equal(await kitLifecycle('install', {}, [home, '--target', 'pi,claude'], config, { HOME: home }, dependencies), 0);
-  assert.deepEqual(events, ['pi', 'claude', ['end', 0]]);
+  assert.equal(await kitLifecycle('install', {}, [home, '--target', 'codex,claude'], config, { HOME: home }, dependencies), 0);
+  assert.deepEqual(events, ['codex', 'claude', ['end', 0]]);
 });
 test('interactive source conflict reports its diagnostic before closing', async t => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-session-error-')));
@@ -40,7 +40,7 @@ test('interactive source conflict reports its diagnostic before closing', async 
   const dependencies = {
     readPin: descriptor => ({ descriptor, source, state: 'installed', snapshot: {} }),
     pinnedSnapshot: () => ({ pkg: '/fixture', cleanup() {} }),
-    selectInstalledTargets: async () => { events.push('select'); return { code: 0, targets: ['pi'] }; },
+    selectInstalledTargets: async () => { events.push('select'); return { code: 0, targets: ['codex'] }; },
     runControlled: async () => { throw Error('source conflict must stop before apply'); },
     finishKitSession: code => events.push(['end', code]),
   };

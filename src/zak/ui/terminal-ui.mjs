@@ -1,7 +1,7 @@
 import { stripVTControlCharacters } from 'node:util';
 import { outro, log } from '@clack/prompts';
 export { outro };
-export const HOST_LABELS = Object.freeze({ omp: 'OMP', pi: 'Pi', codex: 'Codex', claude: 'Claude Code' });
+export const HOST_LABELS = Object.freeze({ codex: 'Codex', claude: 'Claude Code' });
 const clean = value => stripVTControlCharacters(String(value)).replace(/[\x00-\x1f\x7f-\x9f]/g, ' ');
 /** Keep status output plain in pipes; share the Clack guide in terminals. */
 export function reportMessage(level, message, { output = level === 'error' ? process.stderr : process.stdout, plain = false } = {}) {

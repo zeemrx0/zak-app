@@ -8,7 +8,7 @@ const { legacyDescriptor, compatibleDescriptor, pinKey, stateRoot, readPin, writ
 function fixture(t) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-pins-')));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
-  const env = { HOME: home }, descriptor = resolveTarget({ host: 'pi', scope: 'project', project: home, env });
+  const env = { HOME: home }, descriptor = resolveTarget({ host: 'codex', scope: 'project', project: home, env });
   const source = { repository: 'official/private-fixture', repositoryId: 42, ownerId: 7,
     transport: 'gh', channel: 'stable', distribution: 'private' };
   const snapshot = { id: 'a'.repeat(64), tag: 'v1.0.0', files: { 'package.json': 'b'.repeat(64),
@@ -34,13 +34,13 @@ test('pending and completed pins remain private, target-specific, and byte-stabl
   removePin(f.descriptor, f.env); assert.equal(readPin(f.descriptor, f.env), null);
 });
 test('global pins ignore project input while host, scope, and actual roots isolate keys', t => {
-  const f = fixture(t), first = resolveTarget({ host: 'pi', scope: 'global', project: '/one', env: f.env });
-  const second = resolveTarget({ host: 'pi', scope: 'global', project: '/two', env: f.env });
+  const f = fixture(t), first = resolveTarget({ host: 'codex', scope: 'global', project: '/one', env: f.env });
+  const second = resolveTarget({ host: 'codex', scope: 'global', project: '/two', env: f.env });
   assert.equal(pinKey(first), pinKey(second));
   assert.notEqual(pinKey(first), pinKey(f.descriptor));
-  assert.notEqual(pinKey(first), pinKey(resolveTarget({ host: 'omp', scope: 'global', env: f.env })));
-  assert.notEqual(pinKey(first), pinKey(resolveTarget({ host: 'pi', scope: 'global', env: { HOME: f.home,
-    PI_CODING_AGENT_DIR: path.join(f.home, 'profile') } })));
+  assert.notEqual(pinKey(first), pinKey(resolveTarget({ host: 'claude', scope: 'global', env: f.env })));
+  assert.notEqual(pinKey(first), pinKey(resolveTarget({ host: 'codex', scope: 'global', env: { HOME: f.home,
+    CODEX_HOME: path.join(f.home, 'profile') } })));
 });
 test('symlinked state, world-readable receipts, and corrupt identities fail closed', t => {
   const f = fixture(t); writePin(f.pin, f.env);

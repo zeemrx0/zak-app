@@ -64,7 +64,7 @@ process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:process.exit
   t.after(() => new Promise(resolve => server.close(resolve)));
   const url = `http://127.0.0.1:${server.address().port}`;
   const env = { ...process.env, HOME: home, USERPROFILE: home, ZAK_RELEASE_BASE_URL: url, ZAK_RELEASE_API_URL: url + '/api' };
-  for (const key of ['ZAK_ROOT', 'XDG_DATA_HOME', 'PI_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
+  for (const key of ['ZAK_ROOT', 'XDG_DATA_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
   const bootstrap = await runProcess('sh', [path.join(first.out, 'install.sh')], env, project);
   assert.equal(bootstrap.code, 0, bootstrap.output);
   const launcher = path.join(home, '.local/bin/zak');
@@ -75,7 +75,7 @@ process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:process.exit
   assert.equal((await command(['--version'])).trim(), first.version);
   const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
   fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}\nprocess.stderr.write('not logged into any GitHub hosts');process.exit(1);`, { mode: 0o755 });
-  const kitOptions = ['--target', 'omp,codex', '--json'];
+  const kitOptions = ['--target', 'claude,codex', '--json'];
   const kitEnv = { ZAK_RELEASE_API_URL: url + '/kit-api', PATH: bin + ':' + process.env.PATH, GH_TOKEN: '', GITHUB_TOKEN: '' };
   await command(['kit', 'install', ...kitOptions], kitEnv);
   const beforeKit = fs.readFileSync(path.join(project, '.fixture-kit'));

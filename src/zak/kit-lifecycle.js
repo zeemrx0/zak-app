@@ -12,7 +12,12 @@ const { withGithubAccountsAsync } = require('./github-accounts');
 const { compatibleDescriptor, readPin, writePin, removePin, lockSources } = require('./kit-source-pins');
 const { readPreference, preferredSource, describeSource } = require('./kit-source-preference');
 const { localSource } = require('./kit-local-source');
-const HOSTS = ['omp', 'pi', 'codex', 'claude'];
+const HOSTS = ['codex', 'claude'];
+const REMOVED_HOSTS = { omp: ['OMP', '.omp/'], pi: ['Pi', '.pi/'] };
+function removedHostError(host) {
+  const [name, dir] = REMOVED_HOSTS[host];
+  return new Error(`${name} support was removed; supported targets: claude, codex. Remove an existing ${dir} install with an earlier zak/zAgentKit release or delete it manually.`);
+}
 function targetArgs(args) {
   const result = { hosts: null, scope: 'project', project: process.cwd(), readonly: false, rest: [] };
   let positional = false;
@@ -21,6 +26,8 @@ function targetArgs(args) {
     if (value === '--target') {
       if (result.hosts) throw new Error('--target may be supplied only once');
       const hosts = (args[++i] || '').split(',');
+      const removed = hosts.find(host => Object.hasOwn(REMOVED_HOSTS, host));
+      if (removed) throw removedHostError(removed);
       if (hosts.some(host => !HOSTS.includes(host))) throw new Error('invalid kit targets');
       result.hosts = [...new Set(hosts)];
     } else {
@@ -56,7 +63,7 @@ function legacyContent(file, budget = { remaining: 4096 }, depth = 0) {
 }
 function legacy(descriptor) {
   const roots = new Set([descriptor.controlRoot, descriptor.skillsRoot,
-    ...['skills', 'rules', 'z-rules', 'agents', 'extensions'].map(rel => path.join(descriptor.controlRoot, rel))]);
+    ...['skills', 'rules', 'z-rules', 'agents'].map(rel => path.join(descriptor.controlRoot, rel))]);
   let evidence = fs.existsSync(descriptor.lockPath);
   for (const root of roots) {
     const entry = fs.lstatSync(root, { throwIfNoEntry: false });
@@ -64,7 +71,7 @@ function legacy(descriptor) {
     if (entry.isSymbolicLink() || !entry.isDirectory()) throw new Error('unsafe legacy target inspection');
     if (fs.readdirSync(root).some(name => /^z[-_]|^\.z-/.test(name) && legacyContent(path.join(root, name)))) evidence = true;
   }
-  const startups = [path.join(descriptor.controlRoot, 'AGENTS.md'), path.join(descriptor.controlRoot, 'APPEND_SYSTEM.md')];
+  const startups = [path.join(descriptor.controlRoot, 'AGENTS.md')];
   if (descriptor.project) startups.push(path.join(descriptor.project, 'AGENTS.md'));
   for (const file of startups) {
     const entry = fs.lstatSync(file, { throwIfNoEntry: false });

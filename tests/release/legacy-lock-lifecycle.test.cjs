@@ -7,7 +7,7 @@ const { kitLifecycle } = require('../../src/zak/kit-lifecycle');
 const { resolveTarget } = require('../../src/zak/kit-target-locator');
 const { legacyDescriptor, writePin, readPin, stateRoot } = require('../../src/zak/kit-source-pins');
 const { runControlled } = require('../../src/zak/kit-control-runner');
-for (const host of ['omp', 'pi', 'codex', 'claude']) for (const scope of ['project', 'global']) {
+for (const host of ['codex', 'claude']) for (const scope of ['project', 'global']) {
   test(`${host} ${scope} trusted predecessor can check, update and uninstall`, async t => {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-old-lifecycle-')));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));

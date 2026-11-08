@@ -16,7 +16,7 @@ Without a selection: authorized GitHub discovery; existing targets retain their 
 A local source packs the folder with npm pack, then installs it like a release.
 Options: --transport curl|gh, --channel stable|beta
 Private sources require authenticated gh transport. CLI releases contain no kits.
-Kit options: [project] --target omp,pi,codex,claude --tier <tiers> --global (-g) --json
+Kit options: [project] --target codex,claude --tier <tiers> --global (-g) --json
 self-update never changes installed kits; self-uninstall leaves kits and cache.
 Kit install/update retrieves verified releases independently of the CLI version.`;
 function kitArgs(operation, args) {
