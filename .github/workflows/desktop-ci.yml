@@ -1,0 +1,44 @@
+name: Desktop CI
+on:
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-ci.yml'
+  push:
+    branches: ['**']
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/desktop-ci.yml'
+permissions:
+  contents: read
+concurrency:
+  group: desktop-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  desktop:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '26.11.1'
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy
+      - name: Cache cargo
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            desktop/src-tauri/target
+          key: cargo-ci-${{ runner.os }}-${{ hashFiles('desktop/src-tauri/Cargo.lock') }}
+          restore-keys: cargo-ci-${{ runner.os }}-
+      - name: Test
+        working-directory: desktop/src-tauri
+        run: cargo test
+      - name: Clippy
+        working-directory: desktop/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Check frontend scripts
+        run: for f in desktop/ui/*.js; do node --check "$f" || exit 1; done

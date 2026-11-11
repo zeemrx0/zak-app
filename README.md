@@ -95,3 +95,9 @@ If CLI removal is interrupted, rerun the installation command with
 `sh -s -- --uninstall` instead of `sh`.
 Edited or foreign files remain protected. If an installation record cannot be verified,
 inspect it before retrying. Do not delete a guard while its process is running.
+
+## 5. Desktop app (optional)
+
+Every release also carries zAgentKit, a macOS (Apple Silicon) app that runs the `zak` CLI for you.
+Install it with `brew install --cask zeemrx0/tap/zak-desktop` or download the DMG from the release page.
+See [desktop/README.md](desktop/README.md) for the manual steps, the release flow and the build instructions.
