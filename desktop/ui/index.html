@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>zAgentKit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="Sidebar">
+      <div class="sidebar-head" data-tauri-drag-region>
+        <span class="app-name" data-tauri-drag-region>zak</span>
+      </div>
+      <nav class="nav" id="nav" aria-label="Sections"></nav>
+      <div class="status-wrap">
+        <button class="status" id="tool-status" type="button" aria-expanded="false" aria-controls="tool-pop">
+          <span class="dot off" id="tool-dot"></span>
+          <span class="status-text" id="tool-text">Checking tools…</span>
+        </button>
+        <div class="popover up" id="tool-pop" role="dialog" aria-label="Tool details" hidden></div>
+      </div>
+    </aside>
+    <main class="content" id="page" tabindex="-1"></main>
+  </div>
+  <dialog class="sheet" id="sheet" aria-labelledby="sheet-title"></dialog>
+  <script src="lib.js"></script>
+  <script src="cli-install.js"></script>
+  <script src="installs.js"></script>
+  <script src="models.js"></script>
+  <script src="source.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
