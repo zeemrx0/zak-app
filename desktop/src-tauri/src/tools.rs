@@ -59,13 +59,53 @@ fn login_shell_script() -> String {
     script
 }
 
+/// Runs the shell script with `flags` and returns its stdout, or `None` on failure or after `timeout`.
+fn run_shell(shell: &str, flags: &str, timeout: std::time::Duration) -> Option<String> {
+    use std::io::Read;
+    let mut child = Command::new(shell)
+        .args([flags, &login_shell_script()])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut s = String::new();
+        let _ = stdout.read_to_string(&mut s);
+        s
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let out = reader.join().ok()?;
+                return status.success().then_some(out);
+            }
+            Ok(None) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(20)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
+/// Interactive login shell first, because version managers such as fnm and nvm add `node` to PATH only in
+/// the rc file (`~/.zshrc`), which a non-interactive login shell skips. Falls back to a plain login shell when
+/// the interactive one fails, hangs or prints no PATH.
 fn read_login_env() -> LoginEnv {
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into());
-    let out = Command::new(shell).args(["-lc", &login_shell_script()]).stdin(Stdio::null()).stderr(Stdio::null()).output();
-    match out {
-        Ok(o) if o.status.success() => parse_login_env(&String::from_utf8_lossy(&o.stdout)),
-        _ => LoginEnv::default(),
+    for flags in ["-ilc", "-lc"] {
+        if let Some(out) = run_shell(&shell, flags, std::time::Duration::from_secs(5)) {
+            let parsed = parse_login_env(&out);
+            if parsed.path.is_some() {
+                return parsed;
+            }
+        }
     }
+    LoginEnv::default()
 }
 
 fn login_env() -> &'static LoginEnv {
