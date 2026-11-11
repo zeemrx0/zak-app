@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The only repository the installer is ever fetched from.
-pub const REPOSITORY: &str = "zeemrx0/zak-cli";
+pub const REPOSITORY: &str = "zeemrx0/zak-app";
 const ASSET_NAME: &str = "install.sh";
 const API_TIMEOUT_SECS: &str = "30";
 const DOWNLOAD_TIMEOUT_SECS: &str = "60";
@@ -311,7 +311,7 @@ mod tests {
     fn asset_and_digest_selection() {
         let ok = with_assets(json!([{"name": "install.sh", "digest": format!("sha256:{HEX}")}, {"name": "other", "digest": "x"}]));
         let (url, hex) = installer_asset(&ok).unwrap();
-        assert_eq!(url, "https://github.com/zeemrx0/zak-cli/releases/download/v1.2.3/install.sh");
+        assert_eq!(url, "https://github.com/zeemrx0/zak-app/releases/download/v1.2.3/install.sh");
         assert_eq!(hex, HEX);
 
         assert!(installer_asset(&with_assets(json!([]))).is_err());
@@ -346,7 +346,7 @@ mod tests {
 
     #[test]
     fn urls_target_the_one_repository() {
-        assert_eq!(release_urls(Channel::Stable), ["https://api.github.com/repos/zeemrx0/zak-cli/releases/latest"]);
-        assert!(release_urls(Channel::Beta).iter().all(|u| u.starts_with("https://api.github.com/repos/zeemrx0/zak-cli/releases?per_page=100&page=")));
+        assert_eq!(release_urls(Channel::Stable), ["https://api.github.com/repos/zeemrx0/zak-app/releases/latest"]);
+        assert!(release_urls(Channel::Beta).iter().all(|u| u.starts_with("https://api.github.com/repos/zeemrx0/zak-app/releases?per_page=100&page=")));
     }
 }

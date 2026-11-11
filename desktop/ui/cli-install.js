@@ -4,7 +4,7 @@
 // tool-status popover entry. The backend (`cli_install`) downloads and verifies the official install.sh.
 (function () {
   const { el, invoke, errText } = zak;
-  const REPO = "zeemrx0/zak-cli";
+  const REPO = "zeemrx0/zak-app";
   const NODE_MIN = "26.11.1";
   let channel = "stable";
 

@@ -64,7 +64,7 @@ Homebrew installs the app into Applications and clears the download quarantine f
 ### Manual download
 
 1. Download `zak-desktop-<version>-arm64.dmg` (or the `.zip`) from the
-   [releases page](https://github.com/zeemrx0/zak-cli/releases).
+   [releases page](https://github.com/zeemrx0/zak-app/releases).
 2. Drag zAgentKit into Applications. Do not run it from the mounted DMG.
 3. Open it. macOS blocks the first launch because the app is not notarized.
 4. On macOS 15 and later, open System Settings > Privacy & Security and choose Open Anyway.
@@ -79,7 +79,7 @@ If the app cannot find `zak`, the sidebar status reads "zak not installed". The 
 
 The sheet lets you choose the Stable or Beta channel. When you confirm, the app:
 
-1. reads the release metadata of `zeemrx0/zak-cli` (stable: the latest release, beta: the newest beta prerelease),
+1. reads the release metadata of `zeemrx0/zak-app` (stable: the latest release, beta: the newest beta prerelease),
 2. downloads `install.sh` from that release,
 3. checks its SHA-256 against the release asset digest and refuses to run it on a mismatch,
 4. runs it, which installs `zak` to `~/.local/bin/zak`.
@@ -126,7 +126,7 @@ cargo tauri build --bundles app,dmg   # output in target/release/bundle/{macos,d
 ```
 
 The bundle is ad-hoc signed (`signingIdentity: "-"`). The app version comes from `tauri.conf.json`
-(`0.1.0`). Release builds override it with the zak-cli version through `--config`.
+(`0.1.0`). Release builds override it with the CLI version from `cli/package.json` through `--config`.
 
 ## Test
 
@@ -175,26 +175,26 @@ If that file cannot be read, the sidebar shows the error under Installs and This
 
 ## Release
 
-The desktop app ships inside every zak-cli release. There is no separate tag.
+The desktop app ships inside every zak-app release (the CLI and the app share one tag and version). There is no separate tag.
 
-1. Bump `version` in the root `package.json` and push a tag `v<version>` (for example `v0.3.1` or `v0.3.1-beta.1`).
+1. Bump `version` in `cli/package.json` and `cli/package-lock.json` and push a tag `v<version>` (for example `v0.3.1` or `v0.3.1-beta.1`).
 2. `.github/workflows/release.yml` runs these jobs:
-   - `release` tests the CLI, builds it and uploads the CLI assets to a **draft** release.
+   - `release` tests the CLI (in `cli/`), builds it and uploads the CLI assets to a **draft** release.
    - `desktop` (macOS 15, after `release`) runs `cargo test` and `cargo clippy`, builds with
      `cargo tauri build --bundles app,dmg --config '{"version":"<version>"}'`, ad-hoc signs, zips with
-     `ditto -c -k --keepParent`, runs `scripts/ci/verify-desktop-bundle.sh` (arm64, version, `codesign --verify`) and
+     `ditto -c -k --keepParent`, runs `desktop/scripts/ci/verify-desktop-bundle.sh` (arm64, version, `codesign --verify`) and
      uploads `zak-desktop-<version>-arm64.dmg` and `.zip` to the draft. It reads both files back and compares them.
    - `publish` (after both) turns the draft into the public release. Stable tags become "latest". Tags with
      `-beta.` are prereleases.
-   - `homebrew` (stable tags only, after `publish`) renders `packaging/homebrew/zak-desktop.rb` and pushes
-     `Casks/zak-desktop.rb` to `ZeeMRx0/homebrew-tap` with `scripts/ci/bump-homebrew-cask.sh`.
+   - `homebrew` (stable tags only, after `publish`) renders `desktop/packaging/homebrew/zak-desktop.rb` and pushes
+     `Casks/zak-desktop.rb` to `ZeeMRx0/homebrew-tap` with `desktop/scripts/ci/bump-homebrew-cask.sh`.
 3. Beta versions such as `0.3.1-beta.1` build and sign normally. The bundle version is the full beta string.
    Beta releases never touch the tap.
 
 One release holds both parts, so the release stays a draft until both succeed. A failed desktop build therefore keeps
 the CLI release in draft too. Fix the cause and rerun the failed jobs. `zak self-update` ignores the extra assets.
 
-The tap update needs the `HOMEBREW_TAP_TOKEN` repository secret in `zeemrx0/zak-cli`: a fine-grained token with
+The tap update needs the `HOMEBREW_TAP_TOKEN` repository secret in `zeemrx0/zak-app`: a fine-grained token with
 Contents read and write access to `ZeeMRx0/homebrew-tap`. Without it the `homebrew` job fails after the release is
 already public. Rerun that job after you add the secret.
 
@@ -202,14 +202,18 @@ already public. Rerun that job after you add the secret.
 that touch `desktop/`.
 
 To test the tap update without pushing, set `HOMEBREW_TAP_REMOTE` to a local bare repository and run
-`bash scripts/ci/bump-homebrew-cask.sh <version> <zip>`.
+`bash desktop/scripts/ci/bump-homebrew-cask.sh <version> <zip>`.
 
 ## Layout
 
 ```
-desktop/
-  src-tauri/   Rust backend
-  ui/          index.html, style.css, lib.js (helpers, sheet, menu), installs.js, models.js, source.js, app.js (shell)
+zak-app/
+  cli/           the zak CLI (Node package "zak-cli": src/, tests/, scripts/)
+  desktop/
+    src-tauri/   Rust backend
+    ui/          index.html, style.css, lib.js (helpers, sheet, menu), installs.js, models.js, source.js, app.js (shell)
+    scripts/ci/  release-time desktop checks and the Homebrew cask bump
+    packaging/   Homebrew cask template
 ```
 
-`desktop/`, `scripts/ci/` and `packaging/` are outside the npm `files` allowlist, so they are not part of the published `zak` package.
+`desktop/` is outside the npm `files` allowlist of `cli/package.json`, so it is not part of the published `zak` package.

@@ -69,7 +69,7 @@ test('missing required runtime and unresolved imports prevent release outputs', 
   }
 });
 test('workflow passes public configuration only to the build and keeps publishing isolated', () => {
-  const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/release.yml'), 'utf8');
+  const workflow = fs.readFileSync(path.join(ROOT, '../.github/workflows/release.yml'), 'utf8');
   const block = workflow.split('      - name: Build configured CLI\n')[1].split('      - name: Publish verified assets\n')[0];
   for (const key of Object.keys(ENV)) assert.ok(block.includes(key + ': ${{ vars.' + key + ' }}'));
   assert.equal(block.includes('GH_TOKEN'), false); assert.equal(block.includes('secrets.'), false);

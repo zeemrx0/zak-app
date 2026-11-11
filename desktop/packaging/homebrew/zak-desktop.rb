@@ -2,10 +2,10 @@ cask "zak-desktop" do
   version "__VERSION__"
   sha256 "__SHA256__"
 
-  url "https://github.com/zeemrx0/zak-cli/releases/download/v#{version}/zak-desktop-#{version}-arm64.zip"
+  url "https://github.com/zeemrx0/zak-app/releases/download/v#{version}/zak-desktop-#{version}-arm64.zip"
   name "zAgentKit"
   desc "Desktop app for managing agent kit installs with the zak CLI"
-  homepage "https://github.com/zeemrx0/zak-cli"
+  homepage "https://github.com/zeemrx0/zak-app"
 
   depends_on arch: :arm64
   depends_on :macos

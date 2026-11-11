@@ -18,14 +18,16 @@ jobs:
         with:
           node-version: '26.11.1'
       - run: npm ci
+        working-directory: cli
       - run: npm test
+        working-directory: cli
       - name: Validate identity and tag
         env:
           TAG: ${{ github.ref_name }}
         run: |
           node <<'NODE'
-          const p = require('./package.json');
-          const r = require('./src/release/release-metadata');
+          const p = require('./cli/package.json');
+          const r = require('./cli/src/release/release-metadata');
           if (process.env.TAG !== 'v' + p.version ||
               process.env.GITHUB_REPOSITORY !== r.releaseRepository(p) ||
               !(r.STABLE.test(p.version) || r.BETA.test(p.version)))
@@ -34,6 +36,7 @@ jobs:
       - name: Build configured CLI
         env:
           ZAK_PUBLIC_REPO: ${{ vars.ZAK_PUBLIC_REPO }}
+        working-directory: cli
         run: npm run build
       - name: Publish verified assets
         env:
@@ -48,12 +51,13 @@ jobs:
           esac
           gh release create "$TAG" --verify-tag --draft $prerelease $latest \
             --title "$TAG" --notes 'Verified zak CLI release.'
-          gh release upload "$TAG" dist/release/install.sh \
-            dist/release/zak-cli-*.tgz dist/release/SHA256SUMS
+          out=cli/dist/release
+          gh release upload "$TAG" "$out/install.sh" \
+            "$out"/zak-cli-*.tgz "$out/SHA256SUMS"
           mkdir read-back
           gh release download "$TAG" --dir read-back
-          cmp dist/release/install.sh read-back/install.sh
-          cmp dist/release/SHA256SUMS read-back/SHA256SUMS
+          cmp "$out/install.sh" read-back/install.sh
+          cmp "$out/SHA256SUMS" read-back/SHA256SUMS
           (cd read-back && sha256sum -c SHA256SUMS)
   desktop:
     needs: release
@@ -73,8 +77,8 @@ jobs:
       - name: Read version
         run: |
           set -eu
-          version=$(node -p "require('./package.json').version")
-          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match package.json $version" >&2; exit 1; }
+          version=$(node -p "require('./cli/package.json').version")
+          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match cli/package.json $version" >&2; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal --component clippy --target aarch64-apple-darwin
@@ -106,7 +110,7 @@ jobs:
           mkdir -p dist/desktop
           ditto -c -k --keepParent "$bundle/macos/zAgentKit.app" "dist/desktop/zak-desktop-$VERSION-arm64.zip"
           cp "$bundle/dmg/zAgentKit_${VERSION}_aarch64.dmg" "dist/desktop/zak-desktop-$VERSION-arm64.dmg"
-          bash scripts/ci/verify-desktop-bundle.sh "$VERSION" "$bundle/macos/zAgentKit.app" \
+          bash desktop/scripts/ci/verify-desktop-bundle.sh "$VERSION" "$bundle/macos/zAgentKit.app" \
             "dist/desktop/zak-desktop-$VERSION-arm64.zip" "dist/desktop/zak-desktop-$VERSION-arm64.dmg"
       - name: Upload desktop assets
         run: |
@@ -161,4 +165,4 @@ jobs:
         run: |
           set -eu
           version="${RELEASE_TAG#v}"
-          bash scripts/ci/bump-homebrew-cask.sh "$version" "dist/desktop/zak-desktop-${version}-arm64.zip"
+          bash desktop/scripts/ci/bump-homebrew-cask.sh "$version" "dist/desktop/zak-desktop-${version}-arm64.zip"

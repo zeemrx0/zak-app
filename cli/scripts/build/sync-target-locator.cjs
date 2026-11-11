@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
-function syncTargetLocator({ source = path.resolve(__dirname, '../../../z-agent-kit/src/installer/shared/target-contract.js'),
+function syncTargetLocator({ source = path.resolve(__dirname, '../../../../z-agent-kit/src/installer/shared/target-contract.js'),
   destination = path.resolve(__dirname, '../../src/zak/kit-target-locator.js'), check = false } = {}) {
   const text = '// Generated from the authoritative kit target contract; do not edit.\n' + fs.readFileSync(source, 'utf8');
   if (check) {
