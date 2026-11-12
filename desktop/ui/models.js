@@ -29,20 +29,21 @@
   let ui = null; // refs for the mounted page
   let previewTimer = null;
 
-  const emptyRow = () => ({ model: [], thinking: "", inherit: "" });
-  const isEmpty = (r) => !r.model.length && !r.thinking && !r.inherit;
-  const same = (a, b) => a.thinking === b.thinking && a.inherit === b.inherit && a.model.join("\n") === b.model.join("\n");
-  const clone = (r) => ({ model: [...r.model], thinking: r.thinking, inherit: r.inherit });
+  const emptyRow = () => ({ model: [], thinking: "", inherit: "", active: "" });
+  const isEmpty = (r) => !r.model.length && !r.thinking && !r.inherit && !r.active;
+  const same = (a, b) => a.thinking === b.thinking && a.inherit === b.inherit && a.active === b.active && a.model.join("\n") === b.model.join("\n");
+  const clone = (r) => ({ model: [...r.model], thinking: r.thinking, inherit: r.inherit, active: r.active });
 
   function normAlias(v) {
     const strs = (x) => (Array.isArray(x) ? x.filter((s) => typeof s === "string") : []);
-    if (typeof v === "string") return { model: [v], thinking: "", inherit: "" };
-    if (Array.isArray(v)) return { model: strs(v), thinking: "", inherit: "" };
+    if (typeof v === "string") return { model: [v], thinking: "", inherit: "", active: "" };
+    if (Array.isArray(v)) return { model: strs(v), thinking: "", inherit: "", active: "" };
     if (v && typeof v === "object") {
       return {
         model: typeof v.model === "string" ? [v.model] : strs(v.model),
         thinking: typeof v.thinking === "string" ? v.thinking : "",
         inherit: typeof v.inherit === "string" ? v.inherit : "",
+        active: typeof v.active === "string" ? v.active : "",
       };
     }
     return emptyRow();
@@ -171,7 +172,9 @@
     list.forEach((m, i) => {
       const v = verdicts.get(m);
       const bad = !!v && !v.ok;
-      wrap.append(el("div", { class: bad ? "bad" : "", text: `${i + 1}. ${m}`, title: bad ? `${m}\n${(v.reasons || []).join("\n")}` : m }));
+      const line = el("div", { class: bad ? "bad" : "", title: bad ? `${m}\n${(v.reasons || []).join("\n")}` : m }, `${i + 1}. ${m}`);
+      if (m === r.active) line.append(el("span", { class: "active-badge", text: "active", title: "Active model: the router starts here" }));
+      wrap.append(line);
     });
     const note = M.chainError ? "Preview unavailable" : preview && preview.error ? String(preview.error) : "";
     if (note) wrap.append(el("div", { class: "bad small", text: note, title: M.chainError || note }));
@@ -332,6 +335,14 @@
       err
     );
 
+    // active model
+    const chainIds = r.model.length ? r.model : eff.model || [];
+    const activeIds = r.active && !chainIds.includes(r.active) ? [...chainIds, r.active] : chainIds;
+    const activeSel = el("select", { class: "field", id: "ins-active", "data-key": "active" }, el("option", { value: "", text: "Automatic (first usable)" }), ...activeIds.map((x) => el("option", { value: x, text: x })));
+    activeSel.value = r.active;
+    activeSel.addEventListener("change", () => edit(name, () => (r.active = activeSel.value), "active"));
+    box.append(el("h3", {}, el("label", { for: "ins-active", text: "Active model" })), activeSel);
+
     // effort
     const efforts = [...(M.data.efforts || [])];
     if (r.thinking && !efforts.includes(r.thinking)) efforts.push(r.thinking);
@@ -407,7 +418,15 @@
     const m = M.rows[name].model;
     edit(name, () => m.splice(i + d, 0, m.splice(i, 1)[0]), d < 0 ? `up${Math.max(i - 1, 0)}` : `down${i + 1}`);
   }
-  const removeModel = (name, i) => edit(name, () => M.rows[name].model.splice(i, 1), "pick");
+  const removeModel = (name, i) =>
+    edit(
+      name,
+      () => {
+        const r = M.rows[name];
+        if (r.model.splice(i, 1)[0] === r.active) r.active = "";
+      },
+      "pick"
+    );
   const addModel = (name, id, key) => edit(name, () => M.rows[name].model.push(id), key);
 
   // ---- toolbar, banner, save ----
@@ -453,6 +472,7 @@
       const lines = [];
       if (before.model.join("\n") !== after.model.join("\n")) lines.push(diffLine("Model", chain(before), chain(after), removed));
       if (before.thinking !== after.thinking) lines.push(diffLine("Effort", dash(before.thinking), dash(after.thinking), removed));
+      if (before.active !== after.active) lines.push(diffLine("Active", dash(before.active), dash(after.active), removed));
       if (before.inherit !== after.inherit) lines.push(diffLine("Inherit", dash(before.inherit), dash(after.inherit), removed));
       root.append(
         el(

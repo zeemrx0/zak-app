@@ -241,6 +241,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .row:hover { background: var(--hover); }
 .row[aria-selected="true"] { background: var(--row-sel); }
 .model-chain { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.active-badge { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--accent); color: var(--on-accent); font: 600 10px/16px var(--font); text-transform: uppercase; letter-spacing: .03em; vertical-align: 1px; }
 .table-empty { padding: 16px; color: var(--text-2); text-align: center; }
 .inspector { border-left: 1px solid var(--hair); padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
 .inspector h3 { font-size: 12px; font-weight: 600; margin-top: 10px; }

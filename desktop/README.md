@@ -37,7 +37,9 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
 - **Projects.** "Add Project…" opens the folder picker. Projects persist between runs. "Remove from List…" under
   More forgets a project and does not uninstall anything. More also sets the update channel (default, stable, beta).
 - **Agent Models.** A table of every known agent with Source, Model, Effort, Inherit and a per-host Route preview.
-  Select a row to edit its model chain (order, add, remove), effort and inherit in the inspector. Edits stay local
+  Select a row to edit its model chain (order, add, remove), effort and inherit in the inspector. The Active model picker
+  pins which entry of the chain the router tries first, and the rest of the chain is the fallback (then the
+  entries before it); "Automatic" leaves it unset, and it is not inherited. Edits stay local
   until "Save N changes". The save sends only changed aliases with the loaded file hash. A 422 shows the
   validator's errors, and a 409 reports that `agents.json` changed on disk and offers Reload. Save opens the plan
   sheet, which lists each changed agent as before → after (model chain, effort, inherit; removals in red). The
