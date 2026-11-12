@@ -154,44 +154,28 @@
     }
   }
 
-  // ---- preference chain text ----
-  // The chain is the ordered model list. Whether an entry runs depends on the orchestrator that spawns the agent,
-  // so an entry is marked bad only when no host can run it.
-  const shortModel = (m) => m.slice(m.indexOf("/") + 1);
-
-  function chainParts(name) {
-    if (M.chainError) return [{ text: "Preview unavailable", bad: true, title: M.chainError }];
-    const r = M.chains[name];
-    if (!r) return [{ text: "…", muted: true }];
-    if (r.error) return [{ text: String(r.error), bad: true }];
-    if (!r.chain.length) return [{ text: "—", muted: true }];
-    return r.chain.map((x, i) => ({
-      text: `${i + 1}. ${shortModel(x.model)}`,
-      bad: !x.ok,
-      title: x.ok ? x.model : `${x.model}\n${(x.reasons || []).join("\n")}`,
-    }));
-  }
-
-  function chainNode(name) {
-    const wrap = el("span", { class: "chain-line mono" });
-    chainParts(name).forEach((p, i) => {
-      if (i) wrap.append(" ");
-      wrap.append(el("span", { class: p.bad ? "bad" : p.muted ? "muted" : "", text: p.text, title: p.title || "" }));
-    });
-    return wrap;
-  }
-
   // ---- table ----
+  // The cell lists the effective chain in order. An entry is marked bad only when the preview says no host can run it.
   function modelCell(name) {
     const r = M.rows[name];
-    if (r.model.length) {
-      const wrap = el("span", {}, el("span", { class: "mono", text: r.model[0] }));
-      if (r.model.length > 1) wrap.append(el("span", { class: "more", text: ` +${r.model.length - 1}` }));
-      return wrap;
+    const eff = r.model.length ? null : effective(name);
+    const list = r.model.length ? r.model : eff && eff.model;
+    if (!list || !list.length) return el("span", { class: "muted", text: "—" });
+    const preview = M.chains[name];
+    const verdicts = new Map(((preview && preview.chain) || []).map((x) => [x.model, x]));
+    const wrap = el("div", { class: "model-chain mono" });
+    if (eff) {
+      wrap.classList.add("muted");
+      wrap.title = `Inherited from ${eff.modelFrom}`;
     }
-    const eff = effective(name);
-    if (eff.model) return el("span", { class: "muted", title: `Inherited from ${eff.modelFrom}` }, el("span", { class: "mono", text: eff.model[0] }));
-    return el("span", { class: "muted", text: "—" });
+    list.forEach((m, i) => {
+      const v = verdicts.get(m);
+      const bad = !!v && !v.ok;
+      wrap.append(el("div", { class: bad ? "bad" : "", text: `${i + 1}. ${m}`, title: bad ? `${m}\n${(v.reasons || []).join("\n")}` : m }));
+    });
+    const note = M.chainError ? "Preview unavailable" : preview && preview.error ? String(preview.error) : "";
+    if (note) wrap.append(el("div", { class: "bad small", text: note, title: M.chainError || note }));
+    return wrap;
   }
 
   // Effort symbol (Symbols Nerd Font, Material Design range): filling circle for lower levels, fire for the top two. Unknown values get none.
@@ -228,7 +212,6 @@
     }
     refs.inherit.className = r.inherit ? "" : "muted";
     refs.inherit.textContent = r.inherit || "—";
-    refs.chain.replaceChildren(chainNode(name));
   }
 
   function visibleNames() {
@@ -257,7 +240,6 @@
       const model = el("td");
       const effort = el("td", { class: "num" });
       const inherit = el("td");
-      const chain = el("td", { class: "chain-cell" });
       const tr = el(
         "tr",
         { tabindex: "0", "aria-selected": String(n === M.sel), class: "row" },
@@ -265,8 +247,7 @@
         el("td", { class: "muted", text: sourceText(n), title: (M.sources[n] || []).join(", ") }),
         model,
         effort,
-        inherit,
-        chain
+        inherit
       );
       tr.addEventListener("click", () => selectRow(n, false));
       tr.addEventListener("keydown", (e) => {
@@ -278,7 +259,7 @@
         else return;
         e.preventDefault();
       });
-      ui.rowRefs[n] = { tr, mark, model, effort, inherit, chain };
+      ui.rowRefs[n] = { tr, mark, model, effort, inherit };
       ui.tbody.append(tr);
       paintRow(n);
     }
@@ -604,7 +585,7 @@
     const table = el(
       "table",
       { class: "table models-table" },
-      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Model", "Effort", "Inherit", "Preference order"].map((t) => el("th", { scope: "col", text: t })))),
+      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Model", "Effort", "Inherit"].map((t) => el("th", { scope: "col", text: t })))),
       tbody
     );
     const banner = el("div", { class: "banner-slot" });

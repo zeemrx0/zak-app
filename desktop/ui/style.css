@@ -232,7 +232,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .models-table { table-layout: fixed; }
 .models-table th:nth-child(1) { width: 20%; }
 .models-table th:nth-child(2) { width: 11%; }
-.models-table th:nth-child(3) { width: 27%; }
+.models-table th:nth-child(3) { width: 47%; }
 .models-table th:nth-child(4) { width: 9%; }
 .models-table th:nth-child(5) { width: 13%; }
 .models-table th.agent { display: table-cell; }
@@ -240,9 +240,7 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .row { cursor: default; }
 .row:hover { background: var(--hover); }
 .row[aria-selected="true"] { background: var(--row-sel); }
-.more { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.chain-cell { font-size: 12px; }
-.chain-line { white-space: normal; overflow-wrap: anywhere; }
+.model-chain { font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
 .table-empty { padding: 16px; color: var(--text-2); text-align: center; }
 .inspector { border-left: 1px solid var(--hair); padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
 .inspector h3 { font-size: 12px; font-weight: 600; margin-top: 10px; }
