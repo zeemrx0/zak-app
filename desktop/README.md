@@ -36,13 +36,13 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
   then refreshes the lock data and checks again. The same sheet type confirms every other change in the app.
 - **Projects.** "Add Project…" opens the folder picker. Projects persist between runs. "Remove from List…" under
   More forgets a project and does not uninstall anything. More also sets the update channel (default, stable, beta).
-- **Agent Models.** A table of every known agent with Source, Model, Effort, Inherit and a per-host Route preview.
-  Select a row to edit its model chain (order, add, remove), effort and inherit in the inspector. The Active model picker
+- **Agent Models.** A table of every known agent with Source, Inherit and Model. Each model in the chain carries its own effort, shown as `provider/id · effort`.
+  Select a row to edit its model chain (order, add, remove, and an effort for each model) and inherit in the inspector. A model with no stored effort shows the effort inherited from a legacy alias-level setting, else medium, and every save writes an explicit effort for each model. The page refreshes when the window regains focus: it reloads the state when there are no unsaved edits, and only re-runs the preview when there are. The Active model picker
   pins which entry of the chain the router tries first, and the rest of the chain is the fallback (then the
   entries before it); "Automatic" leaves it unset, and it is not inherited. Edits stay local
   until "Save N changes". The save sends only changed aliases with the loaded file hash. A 422 shows the
   validator's errors, and a 409 reports that `agents.json` changed on disk and offers Reload. Save opens the plan
-  sheet, which lists each changed agent as before → after (model chain, effort, inherit; removals in red). The
+  sheet, which lists each changed agent as before → after (model chain with each model's effort, active, inherit; removals in red). The
   validator's 409 and 422 answers appear inside that sheet. If Node.js or the `z-delegate` helper is missing,
   the page says what to install.
 - **Kit Source.** Shows the current source (Public, Private, a local folder, or Automatic when no preference is
@@ -168,7 +168,6 @@ If that file cannot be read, the sidebar shows the error under Installs and This
 - Only the `main` window gets IPC, and only to this app's commands and the core defaults
   (`src-tauri/capabilities/default.json`).
 - The main window has a strict CSP: local scripts, styles and fonts only, no CDN, no remote fonts, no inline code.
-- `ui/fonts/` bundles a subset of Symbols Nerd Font v3.5.1 (MIT, `LICENSE-symbols-nerd-font.txt`) for the effort icons.
 - `agents.json` is never written from Rust or JavaScript. Saves go through the helper's validator, so its stale-file and validation guards apply.
 - Dynamic text (agent names, paths, CLI output) is always rendered with `textContent`.
 - No settings process outlives a request, so quitting the app leaves nothing running.

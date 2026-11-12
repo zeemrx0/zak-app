@@ -276,7 +276,7 @@ The content pane stacks a toolbar (title and subtitle on the left, actions on th
 
 Spacing runs on a 4px base. The common steps are 4, 8, 12, 16 and 20, with 2, 6, 10 and 14 used inside dense controls. Rows are 28px, controls 24px, and segmented options 20px.
 
-One breakpoint exists at 920px. Below it, the inspector narrows to 240px, the models table hides its 2nd and 5th columns, and the search field narrows from 170px to 130px.
+One breakpoint exists at 920px. Below it, the inspector narrows to 240px, the models table hides its 2nd and 3rd columns (Source and Inherit), and the search field narrows from 170px to 130px.
 
 ## Elevation & Depth
 
@@ -323,7 +323,7 @@ The core container. An 8px Group with a hairline border clips a full-width colla
 An inset table with one row per tier and one centered 110px checkbox column per host. The tier name is the row header. The footer holds "Add tier…" and an "Add" button. Secondary help text (12px, 65ch) sits between the "Tiers" headline and the matrix. Source: `ui/installs.js:505–556`.
 
 ### Agent Models table and inspector
-A fixed-layout inset table with percentage column widths. Rows are focusable (`tabindex="0"`). Hover shows the wash, and the selected row (`aria-selected`) shows the Selected Row Wash. A focused row shows an inset 2px halo. A 6px blue mark before the agent name flags unsaved changes. The inspector sits on the Window tone with a hairline left edge. It shows a Title, a small muted source line, 12px/600 subheads, and the model chain: a 6px-radius hairline list of 28px rows with up and down and remove icon buttons. A hairline-topped foot holds "Clear alias". The toolbar holds search, the filter segment, Revert, and a primary "Save N Changes…". Source: `ui/style.css:223–252`, `ui/models.js`.
+A fixed-layout inset table with four percentage-width columns: Agent 22%, Source 12%, Inherit 14%, Model 52%. The Model column lists each chain entry as `n. provider/id · effort`, with a text "active" badge on the active entry, and fades an inherited chain. Rows are focusable (`tabindex="0"`). Hover shows the wash, and the selected row (`aria-selected`) shows the Selected Row Wash. A focused row shows an inset 2px halo. A 6px blue mark before the agent name flags unsaved changes. The inspector sits on the Window tone with a hairline left edge. It shows a Title, a small muted source line, 12px/600 subheads, and the model chain: a 6px-radius hairline list where each row has two lines: the full model id (mono, wraps, never ellipsized) above a compact effort select on the left and up, down and remove icon buttons on the right. Effort belongs to each model, so there is no separate Effort section. A hairline-topped foot holds "Clear alias". The toolbar holds search, the filter segment, Revert, and a primary "Save N Changes…". Source: `ui/style.css:223–252`, `ui/models.js`.
 
 ### Plan sheet (signature)
 A native-style sheet that drops from the toolbar edge. It is fixed at `top: 52px`, `min(640px, 100vw − 48px)` wide, bottom-rounded 12px, on the Sheet tone, with Float shadow. It opens with a 220ms `cubic-bezier(0.16, 1, 0.3, 1)` clip-path unroll from the top, which is disabled under reduced motion. Its parts:

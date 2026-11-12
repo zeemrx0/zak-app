@@ -15,6 +15,7 @@
     data: null,
     names: [],
     sources: {},
+    legacy: {}, // alias-level thinking from the file, read only: the fallback for entries that carry none
     rows: {},
     orig: {},
     sel: null,
@@ -29,52 +30,57 @@
   let ui = null; // refs for the mounted page
   let previewTimer = null;
 
-  const emptyRow = () => ({ model: [], thinking: "", inherit: "", active: "" });
-  const isEmpty = (r) => !r.model.length && !r.thinking && !r.inherit && !r.active;
-  const same = (a, b) => a.thinking === b.thinking && a.inherit === b.inherit && a.active === b.active && a.model.join("\n") === b.model.join("\n");
-  const clone = (r) => ({ model: [...r.model], thinking: r.thinking, inherit: r.inherit, active: r.active });
+  const DEFAULT_EFFORT = "medium";
+  const emptyRow = () => ({ model: [], inherit: "", active: "" });
+  const isEmpty = (r) => !r.model.length && !r.inherit && !r.active;
+  const same = (a, b) => a.inherit === b.inherit && a.active === b.active && a.model.length === b.model.length && a.model.every((e, i) => e.id === b.model[i].id && e.thinking === b.model[i].thinking);
+  const clone = (r) => ({ model: r.model.map((e) => ({ ...e })), inherit: r.inherit, active: r.active });
+
+  // An entry with thinking "" is not set in the file. It resolves to the nearest alias-level thinking on the inherit chain, else medium.
+  function effort(rows, name, entry) {
+    if (entry.thinking) return entry.thinking;
+    const seen = new Set();
+    for (let cur = name; cur && !seen.has(cur) && rows[cur]; cur = rows[cur].inherit) {
+      seen.add(cur);
+      if (M.legacy[cur]) return M.legacy[cur];
+    }
+    return DEFAULT_EFFORT;
+  }
+  const resolved = (rows, name) => ({ ...rows[name], model: rows[name].model.map((e) => ({ id: e.id, thinking: effort(rows, name, e) })) });
+  const chainText = (rows, name) => (rows[name].model.length ? rows[name].model.map((e) => `${e.id} · ${effort(rows, name, e)}`).join(" → ") : "—");
 
   function normAlias(v) {
-    const strs = (x) => (Array.isArray(x) ? x.filter((s) => typeof s === "string") : []);
-    if (typeof v === "string") return { model: [v], thinking: "", inherit: "", active: "" };
-    if (Array.isArray(v)) return { model: strs(v), thinking: "", inherit: "", active: "" };
-    if (v && typeof v === "object") {
-      return {
-        model: typeof v.model === "string" ? [v.model] : strs(v.model),
-        thinking: typeof v.thinking === "string" ? v.thinking : "",
-        inherit: typeof v.inherit === "string" ? v.inherit : "",
-        active: typeof v.active === "string" ? v.active : "",
-      };
+    const entry = (x, legacy) => {
+      if (typeof x === "string") return { id: x, thinking: legacy };
+      if (x && typeof x === "object" && typeof x.id === "string") return { id: x.id, thinking: typeof x.thinking === "string" && x.thinking ? x.thinking : legacy };
+      return null;
+    };
+    const list = (x, legacy) => (Array.isArray(x) ? x : x == null ? [] : [x]).map((e) => entry(e, legacy)).filter(Boolean);
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const legacy = typeof v.thinking === "string" ? v.thinking : "";
+      return { model: list(v.model, legacy), inherit: typeof v.inherit === "string" ? v.inherit : "", active: typeof v.active === "string" ? v.active : "" };
     }
-    return emptyRow();
+    return { model: list(v, ""), inherit: "", active: "" };
   }
 
   const changedNames = () => M.names.filter((n) => !same(M.rows[n], M.orig[n]));
 
   function buildEdits() {
     const edits = {};
-    for (const n of changedNames()) edits[n] = isEmpty(M.rows[n]) ? null : clone(M.rows[n]);
+    for (const n of changedNames()) edits[n] = isEmpty(M.rows[n]) ? null : resolved(M.rows, n);
     return edits;
   }
 
+  // The nearest row on the inherit chain that has its own model chain.
   function effective(name) {
     const seen = new Set();
-    const out = { model: null, modelFrom: null, effort: null, effortFrom: null };
     let cur = name;
     while (cur && !seen.has(cur) && M.rows[cur]) {
       seen.add(cur);
-      const r = M.rows[cur];
-      if (out.model == null && r.model.length) {
-        out.model = r.model;
-        out.modelFrom = cur;
-      }
-      if (out.effort == null && r.thinking) {
-        out.effort = r.thinking;
-        out.effortFrom = cur;
-      }
-      cur = r.inherit;
+      if (M.rows[cur].model.length) return { model: M.rows[cur].model, modelFrom: cur };
+      cur = M.rows[cur].inherit;
     }
-    return out;
+    return { model: null, modelFrom: null };
   }
 
   function sourceText(name) {
@@ -96,10 +102,13 @@
     }
   }
 
-  async function load(keepSelection) {
-    M.status = "loading";
-    M.error = null;
-    paintPage();
+  // silent: a background refresh keeps the page on screen and ignores a failed read.
+  async function load(keepSelection, silent) {
+    if (!silent) {
+      M.status = "loading";
+      M.error = null;
+      paintPage();
+    }
     try {
       const s = await invoke("models_state");
       if (!s || !Array.isArray(s.agents)) throw new Error((s && s.error) || "The model state was empty.");
@@ -112,7 +121,10 @@
       M.names = [...names].sort((x, y) => x.localeCompare(y));
       M.rows = {};
       M.orig = {};
+      M.legacy = {};
       for (const n of M.names) {
+        const a = aliases[n];
+        M.legacy[n] = a && typeof a === "object" && !Array.isArray(a) && typeof a.thinking === "string" ? a.thinking : "";
         M.orig[n] = normAlias(aliases[n]);
         M.rows[n] = clone(M.orig[n]);
       }
@@ -122,6 +134,7 @@
       paintPage();
       runPreview();
     } catch (e) {
+      if (silent) return;
       M.status = "error";
       M.error = errText(e);
       M.missing = await missingTools();
@@ -134,11 +147,26 @@
     previewTimer = setTimeout(runPreview, 300);
   }
 
+  // The installed kit can change while the app sits in the background. Refresh when the window returns.
+  // Unsaved edits are never discarded: with edits only the preview re-runs, without edits the state reloads too.
+  function refreshOnReturn() {
+    if (document.visibilityState === "hidden" || !ui || !ui.root.isConnected || M.status !== "ready") return;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => {
+      if (!ui || !ui.root.isConnected || M.status !== "ready") return;
+      if (changedNames().length) runPreview();
+      else load(true, true);
+    }, 300);
+  }
+  // The shell has no unmount hook, so the listeners live once for the page's lifetime and check the mounted state.
+  window.addEventListener("focus", refreshOnReturn);
+  document.addEventListener("visibilitychange", refreshOnReturn);
+
   async function runPreview() {
     if (M.status !== "ready") return;
     const seq = ++M.previewSeq;
     const rows = {};
-    for (const n of M.names) rows[n] = clone(M.rows[n]);
+    for (const n of M.names) rows[n] = resolved(M.rows, n);
     try {
       const r = await invoke("models_preview", { rows });
       if (seq !== M.previewSeq) return;
@@ -162,6 +190,7 @@
     const eff = r.model.length ? null : effective(name);
     const list = r.model.length ? r.model : eff && eff.model;
     if (!list || !list.length) return el("span", { class: "muted", text: "—" });
+    const owner = eff ? eff.modelFrom : name;
     const preview = M.chains[name];
     const verdicts = new Map(((preview && preview.chain) || []).map((x) => [x.model, x]));
     const wrap = el("div", { class: "model-chain mono" });
@@ -169,30 +198,17 @@
       wrap.classList.add("muted");
       wrap.title = `Inherited from ${eff.modelFrom}`;
     }
-    list.forEach((m, i) => {
-      const v = verdicts.get(m);
+    list.forEach((e, i) => {
+      const v = verdicts.get(e.id);
       const bad = !!v && !v.ok;
-      const line = el("div", { class: bad ? "bad" : "", title: bad ? `${m}\n${(v.reasons || []).join("\n")}` : m }, `${i + 1}. ${m}`);
-      if (m === r.active) line.append(el("span", { class: "active-badge", text: "active", title: "Active model: the router starts here" }));
+      const text = `${e.id} · ${effort(M.rows, owner, e)}`;
+      const line = el("div", { class: bad ? "bad" : "", title: bad ? `${text}\n${(v.reasons || []).join("\n")}` : text }, `${i + 1}. ${text}`);
+      if (e.id === r.active) line.append(el("span", { class: "active-badge", text: "active", title: "Active model: the router starts here" }));
       wrap.append(line);
     });
     const note = M.chainError ? "Preview unavailable" : preview && preview.error ? String(preview.error) : "";
     if (note) wrap.append(el("div", { class: "bad small", text: note, title: M.chainError || note }));
     return wrap;
-  }
-
-  // Effort symbol (Symbols Nerd Font, Material Design range): filling circle for lower levels, fire for the top two. Unknown values get none.
-  const FIRE = "\u{F0238}";
-  const EFFORT_SYMBOLS = { off: "\u{F0766}", minimal: "\u{F0A9F}", low: "\u{F0AA1}", medium: "\u{F0AA3}", high: "\u{F0AA5}", xhigh: FIRE, max: FIRE + FIRE };
-  function effortSymbol(value) {
-    return Object.hasOwn(EFFORT_SYMBOLS, value) ? EFFORT_SYMBOLS[value] : "";
-  }
-  function effortSymbolNode(value) {
-    const hot = value === "xhigh" || value === "max";
-    return el("span", { class: hot ? "effort-sym hot" : "effort-sym", "aria-hidden": "true", text: effortSymbol(value) });
-  }
-  function effortContent(value) {
-    return el("span", { class: "effort-val" }, ...(effortSymbol(value) ? [effortSymbolNode(value)] : []), el("span", { class: "effort-text", text: value }));
   }
 
   function paintRow(name) {
@@ -203,16 +219,6 @@
     refs.mark.hidden = !changed;
     refs.tr.classList.toggle("changed", changed);
     refs.model.replaceChildren(modelCell(name));
-    const eff = effective(name);
-    if (r.thinking) {
-      refs.effort.className = "num";
-      refs.effort.title = "";
-      refs.effort.replaceChildren(effortContent(r.thinking));
-    } else {
-      refs.effort.className = "num muted";
-      refs.effort.replaceChildren(eff.effort ? effortContent(eff.effort) : "—");
-      refs.effort.title = eff.effort ? `Inherited from ${eff.effortFrom}` : "";
-    }
     refs.inherit.className = r.inherit ? "" : "muted";
     refs.inherit.textContent = r.inherit || "—";
   }
@@ -241,16 +247,14 @@
     for (const n of names) {
       const mark = el("span", { class: "mark", title: "Changed", hidden: true }, el("span", { class: "sr", text: "Changed" }));
       const model = el("td");
-      const effort = el("td", { class: "num" });
       const inherit = el("td");
       const tr = el(
         "tr",
         { tabindex: "0", "aria-selected": String(n === M.sel), class: "row" },
         el("th", { scope: "row", class: "agent" }, mark, el("span", { text: n })),
         el("td", { class: "muted", text: sourceText(n), title: (M.sources[n] || []).join(", ") }),
-        model,
-        effort,
-        inherit
+        inherit,
+        model
       );
       tr.addEventListener("click", () => selectRow(n, false));
       tr.addEventListener("keydown", (e) => {
@@ -262,7 +266,7 @@
         else return;
         e.preventDefault();
       });
-      ui.rowRefs[n] = { tr, mark, model, effort, inherit };
+      ui.rowRefs[n] = { tr, mark, model, inherit };
       ui.tbody.append(tr);
       paintRow(n);
     }
@@ -276,7 +280,7 @@
     box.replaceChildren();
     const name = M.sel;
     if (!name) {
-      box.append(el("p", { class: "inspector-empty", text: "Select an agent to edit its model chain, effort and inheritance." }));
+      box.append(el("p", { class: "inspector-empty", text: "Select an agent to edit its model chain, per-model effort and inheritance." }));
       return;
     }
     const r = M.rows[name];
@@ -285,21 +289,30 @@
 
     // model chain
     const chain = el("ol", { class: "chain" });
-    r.model.forEach((id, i) => {
+    r.model.forEach((m, i) => {
+      const efforts = [...(M.data.efforts || [])];
+      const cur = effort(M.rows, name, m);
+      if (!efforts.includes(cur)) efforts.push(cur);
+      const sel = el("select", { class: "field chain-effort", "aria-label": `Effort for ${m.id}`, "data-key": `eff${i}` }, ...efforts.map((x) => el("option", { value: x, text: x })));
+      sel.value = cur;
+      sel.addEventListener("change", () => edit(name, () => (m.thinking = sel.value), `eff${i}`));
       chain.append(
         el(
           "li",
           { class: "chain-item" },
-          el("span", { class: "mono id", text: id, title: id }),
-          el("span", { class: "chain-actions" },
-            iconBtn("up", "Move up", i === 0, () => move(name, i, -1), `up${i}`),
-            iconBtn("down", "Move down", i === r.model.length - 1, () => move(name, i, 1), `down${i}`),
-            iconBtn("x", "Remove", false, () => removeModel(name, i), `rm${i}`)
+          el("span", { class: "mono id", text: m.id, title: m.id }),
+          el("div", { class: "chain-row2" },
+            sel,
+            el("span", { class: "chain-actions" },
+              iconBtn("up", "Move up", i === 0, () => move(name, i, -1), `up${i}`),
+              iconBtn("down", "Move down", i === r.model.length - 1, () => move(name, i, 1), `down${i}`),
+              iconBtn("x", "Remove", false, () => removeModel(name, i), `rm${i}`)
+            )
           )
         )
       );
     });
-    const known = (M.data.models || []).filter((m) => !r.model.includes(m));
+    const known = (M.data.models || []).filter((m) => !r.model.some((e) => e.id === m));
     const pick = el("select", { class: "field", "aria-label": "Add a known model", "data-key": "pick" }, el("option", { value: "", text: "Add known model…" }), ...known.map((m) => el("option", { value: m, text: m })));
     pick.addEventListener("change", () => {
       if (pick.value) addModel(name, pick.value, "pick");
@@ -314,7 +327,7 @@
         err.hidden = false;
         return;
       }
-      if (r.model.includes(v)) {
+      if (r.model.some((e) => e.id === v)) {
         err.textContent = "That model is already in the chain.";
         err.hidden = false;
         return;
@@ -329,40 +342,19 @@
     });
     box.append(
       el("h3", { text: "Model chain" }),
-      r.model.length ? chain : el("p", { class: "muted small", text: eff.model ? `No model set. Inherits ${eff.model.join(", ")} from ${eff.modelFrom}.` : "No model set." }),
+      r.model.length ? chain : el("p", { class: "muted small", text: eff.model ? `No model set. Inherits ${eff.model.map((e) => `${e.id} · ${effort(M.rows, eff.modelFrom, e)}`).join(", ")} from ${eff.modelFrom}.` : "No model set." }),
       pick,
       el("div", { class: "inline" }, free, el("button", { class: "btn", type: "button", text: "Add", on: { click: addFree } })),
       err
     );
 
     // active model
-    const chainIds = r.model.length ? r.model : eff.model || [];
+    const chainIds = (r.model.length ? r.model : eff.model || []).map((e) => e.id);
     const activeIds = r.active && !chainIds.includes(r.active) ? [...chainIds, r.active] : chainIds;
     const activeSel = el("select", { class: "field", id: "ins-active", "data-key": "active" }, el("option", { value: "", text: "Automatic (first usable)" }), ...activeIds.map((x) => el("option", { value: x, text: x })));
     activeSel.value = r.active;
     activeSel.addEventListener("change", () => edit(name, () => (r.active = activeSel.value), "active"));
     box.append(el("h3", {}, el("label", { for: "ins-active", text: "Active model" })), activeSel);
-
-    // effort
-    const efforts = [...(M.data.efforts || [])];
-    if (r.thinking && !efforts.includes(r.thinking)) efforts.push(r.thinking);
-    const effortSel = el("select", { class: "field", id: "ins-effort", "data-key": "effort" }, el("option", { value: "", text: "Inherit / none" }), ...efforts.map((x) => el("option", { value: x, text: x })));
-    effortSel.value = r.thinking;
-    effortSel.addEventListener("change", () => edit(name, () => (r.thinking = effortSel.value), "effort"));
-    // Native option popups cannot use the bundled font, so the effective symbol sits in the heading.
-    const effortSym = el("span", { class: "effort-head-sym" });
-    const paintEffortSym = () => {
-      const v = r.thinking || effective(name).effort;
-      effortSym.replaceChildren(...(effortSymbol(v) ? [effortSymbolNode(v)] : []));
-      effortSym.classList.toggle("muted", !r.thinking);
-    };
-    paintEffortSym();
-    effortSel.addEventListener("change", paintEffortSym);
-    box.append(
-      el("h3", {}, el("label", { for: "ins-effort", text: "Effort" }), effortSym),
-      effortSel
-    );
-    if (!r.thinking) box.append(el("p", { class: "muted small", text: eff.effort ? `Effective: ${eff.effort} from ${eff.effortFrom}.` : "Effective: none." }));
 
     // inherit
     const inh = [...M.names.filter((n) => n !== name)];
@@ -396,7 +388,7 @@
     if (!r.chain.length) return ui.insChain.append(el("p", { class: "muted small", text: "No models set." }));
     const list = el("ol", { class: "pref-list" });
     r.chain.forEach((x) => {
-      const item = el("li", { class: "small" }, el("span", { class: x.ok ? "mono" : "mono bad", text: x.model }));
+      const item = el("li", { class: "small" }, el("span", { class: x.ok ? "mono" : "mono bad", text: `${x.model} · ${x.effort}` }));
       if (!x.ok) item.append(el("span", { class: "muted block", text: `Cannot run: ${(x.reasons || []).join("; ")}` }));
       list.append(item);
     });
@@ -423,11 +415,11 @@
       name,
       () => {
         const r = M.rows[name];
-        if (r.model.splice(i, 1)[0] === r.active) r.active = "";
+        if (r.model.splice(i, 1)[0].id === r.active) r.active = "";
       },
       "pick"
     );
-  const addModel = (name, id, key) => edit(name, () => M.rows[name].model.push(id), key);
+  const addModel = (name, id, key) => edit(name, () => M.rows[name].model.push({ id, thinking: DEFAULT_EFFORT }), key);
 
   // ---- toolbar, banner, save ----
   function paintToolbar() {
@@ -449,7 +441,6 @@
 
   // ---- save plan sheet ----
   const dash = (v) => (v ? v : "—");
-  const chain = (r) => (r.model.length ? r.model.join(" → ") : "—");
 
   function diffLine(label, before, after, removed) {
     return el(
@@ -470,8 +461,9 @@
       const removed = isEmpty(after);
       const added = isEmpty(before);
       const lines = [];
-      if (before.model.join("\n") !== after.model.join("\n")) lines.push(diffLine("Model", chain(before), chain(after), removed));
-      if (before.thinking !== after.thinking) lines.push(diffLine("Effort", dash(before.thinking), dash(after.thinking), removed));
+      const chainBefore = chainText(M.orig, n);
+      const chainAfter = chainText(M.rows, n);
+      if (chainBefore !== chainAfter) lines.push(diffLine("Model", chainBefore, chainAfter, removed));
       if (before.active !== after.active) lines.push(diffLine("Active", dash(before.active), dash(after.active), removed));
       if (before.inherit !== after.inherit) lines.push(diffLine("Inherit", dash(before.inherit), dash(after.inherit), removed));
       root.append(
@@ -605,7 +597,7 @@
     const table = el(
       "table",
       { class: "table models-table" },
-      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Model", "Effort", "Inherit"].map((t) => el("th", { scope: "col", text: t })))),
+      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Inherit", "Model"].map((t) => el("th", { scope: "col", text: t })))),
       tbody
     );
     const banner = el("div", { class: "banner-slot" });
