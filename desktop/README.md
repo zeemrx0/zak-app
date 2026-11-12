@@ -104,7 +104,7 @@ A GUI app on macOS does not get the shell environment. The app runs `$SHELL -lc`
 `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `Z_AGENTS_CONFIG` from it. It uses the PATH for `zak`, `node` and every
 child process. It passes the other three to child processes and uses them to find lock files and `z-delegate.cjs`
 when its own environment lacks them (a variable in the app's own environment wins). It falls back to
-`~/.local/bin` for PATH. The `z-delegate ui` helper runs with your home directory as its working directory.
+`~/.local/bin` for PATH. The `z-delegate settings` commands run with your home directory as its working directory.
 
 ## Build and run
 
@@ -137,7 +137,7 @@ cargo clippy --all-targets -- -D warnings
 for f in ../ui/*.js; do node --check "$f" || echo "FAIL $f"; done   # syntax check of the frontend scripts
 ```
 
-The integration test starts the real `z-delegate ui` server against a temporary config (through `Z_AGENTS_CONFIG`)
+The integration test runs the real `z-delegate settings` commands against a temporary config (through `Z_AGENTS_CONFIG`)
 and checks that a save returns 200, a stale hash returns 409 and an invalid result returns 422. It skips itself
 when `node` or `z-delegate.cjs` is missing. It never touches your real config.
 
@@ -148,15 +148,14 @@ when `node` or `z-delegate.cjs` is missing. It never touches your real config.
 | `zak kit <check\|install\|update\|uninstall> --target <t> (--global \| <project>) [--tier <list>] [--no-tier <list>] [--channel stable\|beta] [--dry-run] --json` (`--no-tier` for projects only) | Install pages and plan sheet. stdin is closed, so it never waits for a prompt. |
 | `zak kit source` and `zak kit source <public\|private\|local <path>>` | Show and set the kit source. |
 | `zak --version`, `node --version` | Tool status. |
-| `node z-delegate.cjs ui --no-open` with `Z_DELEGATE_UI_PORT=0` | Agent Models. The app reads the URL it prints. |
-| `GET /api/state`, `POST /api/preview`, `POST /api/save`, `POST /api/close` on `127.0.0.1` with the `x-z-token` header | Agent Models and shutdown. The Rust side adds the token. |
+| `node z-delegate.cjs settings state`, `settings preview` and `settings save` (JSON on stdin, one JSON object on stdout) | Agent Models. One process per request; nothing keeps running. |
 
 The app also reads `zak-lock.json` files for display: `${CLAUDE_CONFIG_DIR:-~/.claude}` and `${CODEX_HOME:-~/.codex}`
 (from the app's environment or your login shell) for This Mac, and `<project>/.claude` and `<project>/.codex` for projects. It never writes them. Only `zak kit ...`
 changes kit files.
 
 The guard variables `Z_DELEGATE_DEPTH`, `CLAUDECODE` and `CODEX_THREAD_ID` are removed from child processes,
-because `z-delegate ui` refuses to start when they are set. Set `Z_AGENTS_CONFIG` in your login-shell profile (or the
+because `z-delegate settings` refuses to run when they are set. Set `Z_AGENTS_CONFIG` in your login-shell profile (or the
 app's environment) to change the active config path. It is shared with the kit.
 
 The project list is stored in the app data directory as `projects.json`, written through a temp file and a rename.
@@ -168,10 +167,9 @@ If that file cannot be read, the sidebar shows the error under Installs and This
   (`src-tauri/capabilities/default.json`).
 - The main window has a strict CSP: local scripts, styles and fonts only, no CDN, no remote fonts, no inline code.
 - `ui/fonts/` bundles a subset of Symbols Nerd Font v3.5.1 (MIT, `LICENSE-symbols-nerd-font.txt`) for the effort icons.
-- The `z-delegate` token stays in the Rust process. The webview never sees it, and `agents.json` is never written
-  from Rust or JavaScript. Saves go through the helper's validator, so its stale-file and validation guards apply.
+- `agents.json` is never written from Rust or JavaScript. Saves go through the helper's validator, so its stale-file and validation guards apply.
 - Dynamic text (agent names, paths, CLI output) is always rendered with `textContent`.
-- The `z-delegate ui` child stops when the app quits.
+- No settings process outlives a request, so quitting the app leaves nothing running.
 
 ## Release
 

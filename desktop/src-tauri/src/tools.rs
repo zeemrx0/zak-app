@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
-/// Environment variables that make `z-delegate ui` refuse to start or change its behaviour.
+/// Environment variables that make `z-delegate settings` refuse to run or change its behaviour.
 pub const STRIPPED_ENV: &[&str] = &["Z_DELEGATE_DEPTH", "CLAUDECODE", "CODEX_THREAD_ID"];
 
 pub fn home_dir() -> Option<PathBuf> {

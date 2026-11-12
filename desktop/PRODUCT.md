@@ -48,7 +48,7 @@ It is a front end for the same commands the maintainer already trusts. Every cha
 ## Capabilities and Constraints
 
 - Hosts: `claude` and `codex` only.
-- Saves to `agents.json` go only through `z-delegate ui`'s `POST /api/save` with the base hash and token, so its
+- Saves to `agents.json` go only through `z-delegate settings save` with the base hash, so its
   409 (stale) and 422 (invalid) guards apply.
 - Uninstall and every non-dry-run install or update need an explicit confirmation that shows the planned operations.
 - macOS GUI apps lack the shell PATH; tools are found through the login shell.

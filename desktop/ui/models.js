@@ -7,7 +7,6 @@
 
   const MODEL_RE = /^[a-z0-9][a-z0-9._:-]*\/[a-z0-9][a-z0-9._:-]*$/;
   const SOURCE_LABELS = { claude: "Claude", "claude-project": "Claude", codex: "Codex", "codex-project": "Codex", builtin: "Built-in", config: "Config only" };
-  const HOST_LABELS = { claude: "Claude", codex: "Codex" };
 
   const M = {
     status: "idle", // idle | loading | ready | error
@@ -21,9 +20,9 @@
     sel: null,
     filter: "all",
     q: "",
-    routes: {},
-    routeError: null,
-    routeSeq: 0,
+    chains: {},
+    chainError: null,
+    previewSeq: 0,
     banner: null, // { kind, message, reload }
     saving: false,
   };
@@ -136,44 +135,47 @@
 
   async function runPreview() {
     if (M.status !== "ready") return;
-    const seq = ++M.routeSeq;
+    const seq = ++M.previewSeq;
     const rows = {};
     for (const n of M.names) rows[n] = clone(M.rows[n]);
     try {
       const r = await invoke("models_preview", { rows });
-      if (seq !== M.routeSeq) return;
-      M.routes = (r && r.routes) || {};
-      M.routeError = null;
+      if (seq !== M.previewSeq) return;
+      M.chains = (r && r.chains) || {};
+      M.chainError = null;
     } catch (e) {
-      if (seq !== M.routeSeq) return;
-      M.routes = {};
-      M.routeError = errText(e);
+      if (seq !== M.previewSeq) return;
+      M.chains = {};
+      M.chainError = errText(e);
     }
     if (ui && ui.root.isConnected) {
       M.names.forEach(paintRow);
-      paintInspectorRoutes();
+      paintInspectorChain();
     }
   }
 
-  // ---- route text ----
-  function routeParts(name) {
-    if (M.routeError) return [{ text: "Preview unavailable", bad: true, title: M.routeError }];
-    const r = M.routes[name];
+  // ---- preference chain text ----
+  // The chain is the ordered model list. Whether an entry runs depends on the orchestrator that spawns the agent,
+  // so an entry is marked bad only when no host can run it.
+  const shortModel = (m) => m.slice(m.indexOf("/") + 1);
+
+  function chainParts(name) {
+    if (M.chainError) return [{ text: "Preview unavailable", bad: true, title: M.chainError }];
+    const r = M.chains[name];
     if (!r) return [{ text: "…", muted: true }];
     if (r.error) return [{ text: String(r.error), bad: true }];
-    return ["claude", "codex"].map((h) => {
-      const x = r[h];
-      if (!x) return { text: `${HOST_LABELS[h]} none`, muted: true };
-      if (x.ok) return { text: `${HOST_LABELS[h]} ${x.route}`, title: x.model };
-      const why = (x.skipped || []).map((s) => `${s.model}: ${s.reason}`).join("\n");
-      return { text: `${HOST_LABELS[h]} skipped`, bad: true, title: why };
-    });
+    if (!r.chain.length) return [{ text: "—", muted: true }];
+    return r.chain.map((x, i) => ({
+      text: `${i + 1}. ${shortModel(x.model)}`,
+      bad: !x.ok,
+      title: x.ok ? x.model : `${x.model}\n${(x.reasons || []).join("\n")}`,
+    }));
   }
 
-  function routeNode(name) {
-    const wrap = el("span", { class: "route" });
-    routeParts(name).forEach((p, i) => {
-      if (i) wrap.append(el("span", { class: "sep", text: " · " }));
+  function chainNode(name) {
+    const wrap = el("span", { class: "chain-line mono" });
+    chainParts(name).forEach((p, i) => {
+      if (i) wrap.append(" ");
       wrap.append(el("span", { class: p.bad ? "bad" : p.muted ? "muted" : "", text: p.text, title: p.title || "" }));
     });
     return wrap;
@@ -226,7 +228,7 @@
     }
     refs.inherit.className = r.inherit ? "" : "muted";
     refs.inherit.textContent = r.inherit || "—";
-    refs.route.replaceChildren(routeNode(name));
+    refs.chain.replaceChildren(chainNode(name));
   }
 
   function visibleNames() {
@@ -255,7 +257,7 @@
       const model = el("td");
       const effort = el("td", { class: "num" });
       const inherit = el("td");
-      const route = el("td", { class: "route-cell" });
+      const chain = el("td", { class: "chain-cell" });
       const tr = el(
         "tr",
         { tabindex: "0", "aria-selected": String(n === M.sel), class: "row" },
@@ -264,7 +266,7 @@
         model,
         effort,
         inherit,
-        route
+        chain
       );
       tr.addEventListener("click", () => selectRow(n, false));
       tr.addEventListener("keydown", (e) => {
@@ -276,7 +278,7 @@
         else return;
         e.preventDefault();
       });
-      ui.rowRefs[n] = { tr, mark, model, effort, inherit, route };
+      ui.rowRefs[n] = { tr, mark, model, effort, inherit, chain };
       ui.tbody.append(tr);
       paintRow(n);
     }
@@ -378,10 +380,10 @@
     inhSel.addEventListener("change", () => edit(name, () => (r.inherit = inhSel.value), "inherit"));
     box.append(el("h3", {}, el("label", { for: "ins-inherit", text: "Inherit" })), inhSel);
 
-    // route detail
-    ui.insRoute = el("div", { class: "route-detail" });
-    box.append(el("h3", { text: "Route" }), ui.insRoute);
-    paintInspectorRoutes();
+    // preference order
+    ui.insChain = el("div", { class: "pref-detail" });
+    box.append(el("h3", { text: "Preference order" }), ui.insChain);
+    paintInspectorChain();
 
     box.append(
       el("div", { class: "inspector-foot" }, el("button", { class: "btn", type: "button", text: "Clear alias", disabled: isEmpty(r), "data-key": "clear", on: { click: () => edit(name, () => Object.assign(r, emptyRow()), "pick") } }))
@@ -392,20 +394,21 @@
     }
   }
 
-  function paintInspectorRoutes() {
-    if (!ui || !ui.insRoute || !M.sel) return;
-    ui.insRoute.replaceChildren();
-    const r = M.routes[M.sel];
-    if (M.routeError) return ui.insRoute.append(el("p", { class: "bad small", text: M.routeError }));
-    if (!r) return ui.insRoute.append(el("p", { class: "muted small", text: "Checking routes…" }));
-    if (r.error) return ui.insRoute.append(el("p", { class: "bad small", text: String(r.error) }));
-    for (const h of ["claude", "codex"]) {
-      const x = r[h];
-      const line = el("p", { class: "small" }, el("span", { class: "route-host", text: HOST_LABELS[h] }));
-      if (x && x.ok) line.append(el("span", { class: "mono", text: x.model }), el("span", { class: "muted", text: ` via ${x.route}${x.adapter ? " (" + x.adapter + ")" : ""}` }));
-      else if (x) line.append(el("span", { class: "bad", text: "No usable model" }), el("span", { class: "muted mono block", text: (x.skipped || []).map((s) => `${s.model}: ${s.reason}`).join("\n") }));
-      ui.insRoute.append(line);
-    }
+  function paintInspectorChain() {
+    if (!ui || !ui.insChain || !M.sel) return;
+    ui.insChain.replaceChildren();
+    const r = M.chains[M.sel];
+    if (M.chainError) return ui.insChain.append(el("p", { class: "bad small", text: M.chainError }));
+    if (!r) return ui.insChain.append(el("p", { class: "muted small", text: "Checking models…" }));
+    if (r.error) return ui.insChain.append(el("p", { class: "bad small", text: String(r.error) }));
+    if (!r.chain.length) return ui.insChain.append(el("p", { class: "muted small", text: "No models set." }));
+    const list = el("ol", { class: "pref-list" });
+    r.chain.forEach((x) => {
+      const item = el("li", { class: "small" }, el("span", { class: x.ok ? "mono" : "mono bad", text: x.model }));
+      if (!x.ok) item.append(el("span", { class: "muted block", text: `Cannot run: ${(x.reasons || []).join("; ")}` }));
+      list.append(item);
+    });
+    ui.insChain.append(list, el("p", { class: "muted small", text: "The orchestrator picks the route when it spawns the agent." }));
   }
 
   function iconBtn(name, label, disabled, onClick, key) {
@@ -601,7 +604,7 @@
     const table = el(
       "table",
       { class: "table models-table" },
-      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Model", "Effort", "Inherit", "Route"].map((t) => el("th", { scope: "col", text: t })))),
+      el("thead", {}, el("tr", {}, ...["Agent", "Source", "Model", "Effort", "Inherit", "Preference order"].map((t) => el("th", { scope: "col", text: t })))),
       tbody
     );
     const banner = el("div", { class: "banner-slot" });
@@ -618,7 +621,7 @@
       ),
       el("div", { class: "models-body" }, state, main, inspector)
     );
-    ui = { root: container, search, segButtons, revert: revertBtn, save: saveBtn, tbody, empty: emptyEl, banner, main, inspector, state, rowRefs: {}, insRoute: null };
+    ui = { root: container, search, segButtons, revert: revertBtn, save: saveBtn, tbody, empty: emptyEl, banner, main, inspector, state, rowRefs: {}, insChain: null };
     if (M.status === "idle") load(false);
     else paintPage();
   }

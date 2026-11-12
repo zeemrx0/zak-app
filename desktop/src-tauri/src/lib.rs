@@ -1,15 +1,15 @@
-//! zAgentKit: a thin Tauri shell over the `zak` CLI and the installed `z-delegate ui` server.
+//! zAgentKit: a thin Tauri shell over the `zak` CLI and the installed `z-delegate settings` commands.
 
 pub mod cli_install;
 pub mod installs;
 pub mod kit;
-pub mod server;
+pub mod settings;
 pub mod tools;
 
 use serde_json::Value;
-use server::Manager;
+use settings::Runner;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager as _, RunEvent};
+use tauri::{AppHandle, Manager};
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("task failed: {e}"))?
@@ -70,30 +70,26 @@ async fn project_remove(app: AppHandle, path: String) -> Result<Vec<String>, Str
     blocking(move || installs::remove_project(&file, &path)).await
 }
 
-/// `GET /api/state` body as is. The server token stays in Rust.
+/// `z-delegate settings state` output as is.
 #[tauri::command]
-async fn models_state(app: AppHandle) -> Result<Value, String> {
-    blocking(move || app.state::<Manager>().with_server(|s| s.state())).await
+async fn models_state() -> Result<Value, String> {
+    blocking(|| Runner::discover()?.state()).await
 }
 
 #[tauri::command]
-async fn models_preview(app: AppHandle, rows: Value) -> Result<Value, String> {
-    blocking(move || app.state::<Manager>().with_server(|s| s.preview(&rows))).await
+async fn models_preview(rows: Value) -> Result<Value, String> {
+    blocking(move || Runner::discover()?.preview(&rows)).await
 }
 
 /// Passes 200, 409, 422 and any other status through as `{ status, body }`.
 #[tauri::command]
-async fn models_save(app: AppHandle, edits: Value, base_hash: Option<String>) -> Result<server::ApiReply, String> {
-    blocking(move || app.state::<Manager>().with_server(|s| s.save(&edits, base_hash.as_deref()))).await
+async fn models_save(edits: Value, base_hash: Option<String>) -> Result<settings::ApiReply, String> {
+    blocking(move || Runner::discover()?.save(&edits, base_hash.as_deref())).await
 }
 
 pub fn run() {
-    let app = tauri::Builder::default()
+    tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .setup(|app| {
-            app.manage(Manager::new());
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             kit_run,
             kit_source_get,
@@ -107,11 +103,6 @@ pub fn run() {
             models_preview,
             models_save
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building the zAgentKit app");
-    app.run(|handle, event| {
-        if matches!(event, RunEvent::Exit) {
-            handle.state::<Manager>().shutdown();
-        }
-    });
+        .run(tauri::generate_context!())
+        .expect("error while running the zAgentKit app");
 }

@@ -241,7 +241,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .row:hover { background: var(--hover); }
 .row[aria-selected="true"] { background: var(--row-sel); }
 .more { color: var(--text-2); font-variant-numeric: tabular-nums; }
-.route-cell { font-size: 12px; }
+.chain-cell { font-size: 12px; }
+.chain-line { white-space: normal; overflow-wrap: anywhere; }
 .table-empty { padding: 16px; color: var(--text-2); text-align: center; }
 .inspector { border-left: 1px solid var(--hair); padding: 14px 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
 .inspector h3 { font-size: 12px; font-weight: 600; margin-top: 10px; }
@@ -254,8 +255,8 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .chain-item + .chain-item { border-top: 1px solid var(--hair); }
 .chain-item .id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chain-actions { display: flex; flex: none; }
-.route-detail { display: flex; flex-direction: column; gap: 4px; }
-.route-host { display: inline-block; width: 52px; color: var(--text-2); }
+.pref-detail { display: flex; flex-direction: column; gap: 4px; }
+.pref-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
 
 /* sheet */
 dialog.sheet { position: fixed; top: 52px; width: min(640px, calc(100vw - 48px)); max-height: calc(100vh - 52px - 24px); margin: 0 auto auto; padding: 0; border: 1px solid var(--hair-strong); border-top-color: var(--hair); border-radius: 0 0 12px 12px; background: var(--sheet); color: var(--text); box-shadow: var(--shadow); overflow: hidden; }
