@@ -10,6 +10,10 @@ const COMMANDS: &[&str] = &[
     "models_state",
     "models_preview",
     "models_save",
+    "templates_list",
+    "templates_get",
+    "templates_save",
+    "templates_reset",
 ];
 
 fn main() {

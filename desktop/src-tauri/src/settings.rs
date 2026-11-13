@@ -63,7 +63,7 @@ impl Runner {
         });
         let out = child.wait_with_output().map_err(|e| format!("z-delegate settings {sub} failed: {e}"))?;
         let _ = writer.join();
-        parse_output(sub, out.status.code(), &out.stdout, &out.stderr)
+        parse_output(&format!("z-delegate settings {sub}"), out.status.code(), &out.stdout, &out.stderr)
     }
 
     /// `{agents, models, efforts, path, config, hash, error?}`; `hash` is null when the file is missing and
@@ -79,23 +79,28 @@ impl Runner {
 
     /// 200 saved, 409 stale, 422 `{errors}`; the caller surfaces the reply as is.
     pub fn save(&self, edits: &Value, base_hash: Option<&str>) -> Result<ApiReply, String> {
-        let mut body = self.call("save", Some(&json!({ "edits": edits, "baseHash": base_hash })))?;
-        let status = body
-            .get("status")
-            .and_then(Value::as_u64)
-            .and_then(|s| u16::try_from(s).ok())
-            .ok_or("z-delegate settings save returned no status")?;
-        if let Some(map) = body.as_object_mut() {
-            map.remove("status");
-        }
-        Ok(ApiReply { status, body })
+        let body = self.call("save", Some(&json!({ "edits": edits, "baseHash": base_hash })))?;
+        into_reply("z-delegate settings save", body)
     }
 }
 
-fn parse_output(sub: &str, code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Result<Value, String> {
+/// Splits the script's `status` field off its JSON reply.
+pub(crate) fn into_reply(label: &str, mut body: Value) -> Result<ApiReply, String> {
+    let status = body
+        .get("status")
+        .and_then(Value::as_u64)
+        .and_then(|s| u16::try_from(s).ok())
+        .ok_or_else(|| format!("{label} returned no status"))?;
+    if let Some(map) = body.as_object_mut() {
+        map.remove("status");
+    }
+    Ok(ApiReply { status, body })
+}
+
+pub(crate) fn parse_output(label: &str, code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Result<Value, String> {
     let parsed = serde_json::from_slice::<Value>(stdout).ok();
     if code == Some(0) {
-        return parsed.ok_or_else(|| format!("z-delegate settings {sub} printed no JSON"));
+        return parsed.ok_or_else(|| format!("{label} printed no JSON"));
     }
     let message = parsed
         .as_ref()
@@ -105,9 +110,9 @@ fn parse_output(sub: &str, code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> R
         .unwrap_or_else(|| String::from_utf8_lossy(stderr).trim().to_string());
     let code = code.map_or_else(|| "a signal".to_string(), |c| format!("exit {c}"));
     Err(if message.is_empty() {
-        format!("z-delegate settings {sub} failed ({code})")
+        format!("{label} failed ({code})")
     } else {
-        format!("z-delegate settings {sub} failed ({code}): {message}")
+        format!("{label} failed ({code}): {message}")
     })
 }
 

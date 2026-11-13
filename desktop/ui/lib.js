@@ -14,6 +14,7 @@ window.zak = {
     plus: "M8 3.5v9M3.5 8h9",
     sliders: "M3 5h10M7 3.5v3M3 11h10M10 9.5v3",
     cube: "M8 2l5 2.5v7L8 14l-5-2.5v-7zM3 4.5l5 2.5 5-2.5M8 7v7",
+    doc: "M4 2h5l3 3v9H4zM9 2v3h3M6.5 8.5h3M6.5 11h3",
     chevron: "M4 6.5l4 4 4-4",
     check: "M3.5 8.5l3 3 6-7",
     x: "M4 4l8 8M12 4l-8 8",

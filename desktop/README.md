@@ -45,6 +45,14 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
   sheet, which lists each changed agent as before → after (model chain with each model's effort, active, inherit; removals in red). The
   validator's 409 and 422 answers appear inside that sheet. If Node.js or the `z-delegate` helper is missing,
   the page says what to install.
+- **Templates.** Edits the six `z-unity-setup` templates (gitignore, git exclude, the two gitattributes blocks,
+  `default-layout.json`, `fork-settings.json`) through the kit's `templates.cjs`. The left list shows each template
+  with an "Edited" badge when you have an override. Select one to edit it in a monospace editor. Edits stay local
+  until "Save…", which opens the plan sheet with the target path and a before → after line diff. A 422 shows the
+  validator's errors in the sheet. A 409 reports that the template changed on disk and offers Reload. "Reset to
+  Default…" (only for an edited template) confirms in the same sheet and deletes the override. Switching templates
+  with unsaved edits asks before it discards them. Overrides live in `~/.zak/templates` (or `Z_TEMPLATES_DIR`).
+  If Node.js or `templates.cjs` is missing, the page says to install the kit's `unity` tier for Claude Code or Codex.
 - **Kit Source.** Shows the current source (Public, Private, a local folder, or Automatic when no preference is
   set) and switches between Public, Private and a local folder, with a confirm sheet before the change. If the
   CLI rejects a choice, the sheet shows its message.
@@ -101,9 +109,11 @@ temporary HOME.
 - `zak` installed (for example `~/.local/bin/zak`) and Node.js on the login-shell PATH.
 - For Agent Models: the kit installed with the `z-delegation` skill, so `z-delegate.cjs` exists in
   `~/.claude/skills/z-delegation/scripts/` or `${CODEX_HOME:-~/.codex}/skills/z-delegation/scripts/`.
+- For Templates: the kit's `unity` tier, so `templates.cjs` exists in `~/.claude/skills/z-unity-setup/scripts/` or
+  `${CODEX_HOME:-~/.codex}/skills/z-unity-setup/scripts/`.
 
 A GUI app on macOS does not get the shell environment. The app runs `$SHELL -lc` once and reads `PATH`,
-`CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `Z_AGENTS_CONFIG` from it. It uses the PATH for `zak`, `node` and every
+`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `Z_AGENTS_CONFIG` and `Z_TEMPLATES_DIR` from it. It uses the PATH for `zak`, `node` and every
 child process. It passes the other three to child processes and uses them to find lock files and `z-delegate.cjs`
 when its own environment lacks them (a variable in the app's own environment wins). It falls back to
 `~/.local/bin` for PATH. The `z-delegate settings` commands run with your home directory as its working directory.
@@ -151,6 +161,7 @@ when `node` or `z-delegate.cjs` is missing. It never touches your real config.
 | `zak kit source` and `zak kit source <public\|private\|local <path>>` | Show and set the kit source. |
 | `zak --version`, `node --version` | Tool status. |
 | `node z-delegate.cjs settings state`, `settings preview` and `settings save` (JSON on stdin, one JSON object on stdout) | Agent Models. One process per request; nothing keeps running. |
+| `node templates.cjs list`, `get`, `save` and `reset` (JSON on stdin, one JSON object on stdout) | Templates. One process per request. |
 
 The app also reads `zak-lock.json` files for display: `${CLAUDE_CONFIG_DIR:-~/.claude}` and `${CODEX_HOME:-~/.codex}`
 (from the app's environment or your login shell) for This Mac, and `<project>/.claude` and `<project>/.codex` for projects. It never writes them. Only `zak kit ...`

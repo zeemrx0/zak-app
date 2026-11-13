@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-templates-reset"
+description = "Enables the templates_reset command without any pre-configured scope."
+commands.allow = ["templates_reset"]
+
+[[permission]]
+identifier = "deny-templates-reset"
+description = "Denies the templates_reset command without any pre-configured scope."
+commands.deny = ["templates_reset"]

@@ -19,7 +19,7 @@ pub fn home_dir() -> Option<PathBuf> {
 
 /// Variables that decide where kit and delegation files live. A Finder or Dock launch does not export them, so
 /// they are read from the login shell once, the same way as `PATH`.
-pub const LOGIN_ENV_KEYS: &[&str] = &["CLAUDE_CONFIG_DIR", "CODEX_HOME", "Z_AGENTS_CONFIG"];
+pub const LOGIN_ENV_KEYS: &[&str] = &["CLAUDE_CONFIG_DIR", "CODEX_HOME", "Z_AGENTS_CONFIG", "Z_TEMPLATES_DIR"];
 const MARKER: &str = "ZAK_LOGIN_ENV";
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -159,20 +159,40 @@ pub fn find_node() -> Option<PathBuf> {
     find_in_path("node", child_path())
 }
 
-/// Locations searched for `z-delegate.cjs`, in order: Claude Code (`CLAUDE_CONFIG_DIR` or `~/.claude`), then
-/// Codex (`CODEX_HOME` or `~/.codex`).
-pub fn z_delegate_candidates(home: &Path, claude_dir: Option<&Path>, codex_dir: Option<&Path>) -> Vec<PathBuf> {
-    let rel = "skills/z-delegation/scripts/z-delegate.cjs";
+const Z_DELEGATE_REL: &str = "skills/z-delegation/scripts/z-delegate.cjs";
+const TEMPLATES_REL: &str = "skills/z-unity-setup/scripts/templates.cjs";
+
+/// Locations searched for a kit script at `rel`, in order: Claude Code (`CLAUDE_CONFIG_DIR` or `~/.claude`),
+/// then Codex (`CODEX_HOME` or `~/.codex`).
+fn script_candidates(rel: &str, home: &Path, claude_dir: Option<&Path>, codex_dir: Option<&Path>) -> Vec<PathBuf> {
     let claude = claude_dir.map(Path::to_path_buf).unwrap_or_else(|| home.join(".claude"));
     let codex = codex_dir.map(Path::to_path_buf).unwrap_or_else(|| home.join(".codex"));
     vec![claude.join(rel), codex.join(rel)]
 }
 
-pub fn find_z_delegate() -> Option<PathBuf> {
+fn find_script(rel: &str) -> Option<PathBuf> {
     let home = home_dir()?;
     let claude = env_value("CLAUDE_CONFIG_DIR").map(PathBuf::from);
     let codex = env_value("CODEX_HOME").map(PathBuf::from);
-    z_delegate_candidates(&home, claude.as_deref(), codex.as_deref()).into_iter().find(|p| p.is_file())
+    script_candidates(rel, &home, claude.as_deref(), codex.as_deref()).into_iter().find(|p| p.is_file())
+}
+
+/// Locations searched for `z-delegate.cjs`.
+pub fn z_delegate_candidates(home: &Path, claude_dir: Option<&Path>, codex_dir: Option<&Path>) -> Vec<PathBuf> {
+    script_candidates(Z_DELEGATE_REL, home, claude_dir, codex_dir)
+}
+
+pub fn find_z_delegate() -> Option<PathBuf> {
+    find_script(Z_DELEGATE_REL)
+}
+
+/// Locations searched for the `z-unity-setup` `templates.cjs` helper.
+pub fn templates_candidates(home: &Path, claude_dir: Option<&Path>, codex_dir: Option<&Path>) -> Vec<PathBuf> {
+    script_candidates(TEMPLATES_REL, home, claude_dir, codex_dir)
+}
+
+pub fn find_templates() -> Option<PathBuf> {
+    find_script(TEMPLATES_REL)
 }
 
 /// A command with the login PATH, the login-shell location variables the app itself lacks, no stdin and
@@ -277,6 +297,13 @@ mod tests {
         let c = z_delegate_candidates(Path::new("/h"), Some(Path::new("/cc")), Some(Path::new("/cx")));
         assert_eq!(c[0], Path::new("/cc/skills/z-delegation/scripts/z-delegate.cjs"));
         assert_eq!(c[1], Path::new("/cx/skills/z-delegation/scripts/z-delegate.cjs"));
+    }
+
+    #[test]
+    fn templates_candidates_use_the_unity_setup_skill() {
+        let c = templates_candidates(Path::new("/h"), None, Some(Path::new("/cx")));
+        assert_eq!(c[0], Path::new("/h/.claude/skills/z-unity-setup/scripts/templates.cjs"));
+        assert_eq!(c[1], Path::new("/cx/skills/z-unity-setup/scripts/templates.cjs"));
     }
 
     #[test]

@@ -26,8 +26,9 @@ One window to see and change the state of the zak agent kit on this machine:
 1. Kit health and updates: installed version, tiers and drift for each host (`claude`, `codex`), global and per
    project, with a preview before any change.
 2. Agent models: edit `~/.zak/agents.json` (model chain, effort, inherit) for every known agent.
-3. Kit source: public, private or a local folder.
-4. Project installs: install, check, update or remove the kit in chosen project folders.
+3. Templates: edit the `z-unity-setup` git and layout templates the kit writes into projects.
+4. Kit source: public, private or a local folder.
+5. Project installs: install, check, update or remove the kit in chosen project folders.
 
 Success: a maintainer sees what is installed and whether it is in sync within seconds, and never changes files
 without seeing the planned operations first.

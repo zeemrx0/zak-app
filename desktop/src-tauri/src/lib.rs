@@ -4,6 +4,7 @@ pub mod cli_install;
 pub mod installs;
 pub mod kit;
 pub mod settings;
+pub mod templates;
 pub mod tools;
 
 use serde_json::Value;
@@ -87,6 +88,28 @@ async fn models_save(edits: Value, base_hash: Option<String>) -> Result<settings
     blocking(move || Runner::discover()?.save(&edits, base_hash.as_deref())).await
 }
 
+/// `templates list` output as is: `{dir, templates}`.
+#[tauri::command]
+async fn templates_list() -> Result<Value, String> {
+    blocking(|| templates::Runner::discover()?.list()).await
+}
+
+#[tauri::command]
+async fn templates_get(name: String) -> Result<Value, String> {
+    blocking(move || templates::Runner::discover()?.get(&name)).await
+}
+
+/// Passes 200, 409 and 422 through as `{ status, body }`.
+#[tauri::command]
+async fn templates_save(name: String, content: String, base_hash: Option<String>) -> Result<settings::ApiReply, String> {
+    blocking(move || templates::Runner::discover()?.save(&name, &content, base_hash.as_deref())).await
+}
+
+#[tauri::command]
+async fn templates_reset(name: String, base_hash: Option<String>) -> Result<settings::ApiReply, String> {
+    blocking(move || templates::Runner::discover()?.reset(&name, base_hash.as_deref())).await
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -101,7 +124,11 @@ pub fn run() {
             project_remove,
             models_state,
             models_preview,
-            models_save
+            models_save,
+            templates_list,
+            templates_get,
+            templates_save,
+            templates_reset
         ])
         .run(tauri::generate_context!())
         .expect("error while running the zAgentKit app");

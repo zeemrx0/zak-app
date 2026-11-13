@@ -17,6 +17,10 @@
     "allow-project-remove",
     "allow-models-state",
     "allow-models-preview",
-    "allow-models-save"
+    "allow-models-save",
+    "allow-templates-list",
+    "allow-templates-get",
+    "allow-templates-save",
+    "allow-templates-reset"
   ]
 }

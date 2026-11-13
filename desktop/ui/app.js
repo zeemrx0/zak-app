@@ -1,13 +1,13 @@
 "use strict";
 
-// Shell: sidebar, routing, tool status. Pages live in installs.js, models.js and source.js.
+// Shell: sidebar, routing, tool status. Pages live in installs.js, models.js, templates.js and source.js.
 (function () {
   const { el, icon, invoke, errText } = zak;
   const $ = (id) => document.getElementById(id);
   const S = zak.state;
   let addError = null;
 
-  const pageFor = (id) => (id === "models" ? zak.pages.models : id === "source" ? zak.pages.source : zak.pages.installs);
+  const pageFor = (id) => (id === "models" ? zak.pages.models : id === "templates" ? zak.pages.templates : id === "source" ? zak.pages.source : zak.pages.installs);
 
   function navButton(id, label, iconName, title, withDot) {
     const b = el("button", { class: "nav-item", type: "button", "data-nav": id, title: title || label, on: { click: () => select(id) } }, icon(iconName), el("span", { class: "nav-label", text: label }));
@@ -46,6 +46,7 @@
       { class: "nav-group", role: "group", "aria-labelledby": "grp-config" },
       el("h2", { class: "nav-title", id: "grp-config", text: "Configuration" }),
       navButton("models", "Agent Models", "sliders"),
+      navButton("templates", "Templates", "doc"),
       navButton("source", "Kit Source", "cube")
     );
     nav.append(installs, config);
