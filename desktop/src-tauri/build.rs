@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "kit_run",
+    "kit_tiers",
     "kit_source_get",
     "kit_source_set",
     "tool_status",

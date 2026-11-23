@@ -9,16 +9,16 @@
     { id: "claude", label: "Claude Code" },
     { id: "codex", label: "Codex" },
   ];
-  const TIER_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
-  const VERBS = { install: ["Install", "Installing"], update: ["Update", "Updating"], uninstall: ["Uninstall", "Removing"] };
+  const VERBS = { install: ["Install", "Installing"], update: ["Update", "Updating"], uninstall: ["Uninstall", "Removing"], apply: ["Apply", "Applying"] };
 
-  const stores = new Map(); // location key -> { sel, base, extra, states, busy, notes, results }
+  const stores = new Map(); // location key -> { base, want, states, busy, notes, results }
   const checkedOnce = new Set();
   let channel = null; // null (default) | "stable" | "beta"
   let view = null; // refs of the page currently on screen
 
-  const HELP_GLOBAL = "Each host starts with the tiers recorded in its lock file. For This Mac the ticked tiers are the exact list: unticking an installed tier removes its files on the next Update.";
-  const HELP_PROJECT = "Each host starts with the tiers recorded in its lock file. For a project, ticked tiers are added on top of general and the tiers the kit detects. Unticking a tier that is installed sends it as an exclusion, so the next Update removes it.";
+  const HELP_GLOBAL = "Switch a tier on to install it, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. The first tier on a host brings general with it.";
+  const HELP_PROJECT = "Switch a tier on to install it, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. The kit also adds general and the tiers it detects in the project.";
+  const HELP_NO_CATALOG = "The full tier list appears once the kit has been downloaded, for example after the first install. Until then only general and installed tiers are listed.";
 
   const keyOf = (loc) => (loc.path == null ? "global" : "project:" + loc.path);
   const nameOf = (loc) => (loc.path == null ? "This Mac" : zak.baseName(loc.path));
@@ -33,33 +33,44 @@
     const key = keyOf(loc);
     let s = stores.get(key);
     if (!s) {
-      s = { sel: null, extra: new Set(), states: { claude: { kind: "idle" }, codex: { kind: "idle" } }, busy: false, notes: [], results: [] };
+      s = { base: null, want: null, states: { claude: { kind: "idle" }, codex: { kind: "idle" } }, busy: false, notes: [], results: [] };
       stores.set(key, s);
     }
-    if (!s.sel) {
-      // Defaults come from the lock files, never from a hard-coded tier. A host with no lock copies the other.
+    if (!s.base) {
+      // The toolbar actions use the lock tiers, never a hard-coded tier. A host with no lock copies the other.
       const a = loc.hosts.claude ? loc.hosts.claude.tiers : null;
       const b = loc.hosts.codex ? loc.hosts.codex.tiers : null;
-      s.sel = { claude: new Set(a || b || ["general"]), codex: new Set(b || a || ["general"]) };
-      s.base = { claude: new Set(s.sel.claude), codex: new Set(s.sel.codex) };
+      s.base = { claude: [...(a || b || ["general"])], codex: [...(b || a || ["general"])] };
     }
+    if (!s.want) s.want = { claude: new Set(lockTiers(loc, "claude")), codex: new Set(lockTiers(loc, "codex")) };
     return s;
   }
 
-  // What the boxes changed against the baseline (the lock, or the other host's tiers when there is no lock).
-  function tierDelta(store, h) {
-    const base = store.base[h];
-    const sel = store.sel[h];
-    return { removed: [...base].filter((t) => !sel.has(t)).sort(), added: [...sel].filter((t) => !base.has(t)).sort() };
+  // The staged tier switches against the locks: one entry per host that would change.
+  function pendingChanges(loc, store) {
+    const out = [];
+    for (const h of HOSTS) {
+      const tiers = [...store.want[h.id]].sort();
+      const delta = tierDelta(loc, h.id, tiers);
+      if (hasDelta(delta)) out.push({ host: h, tiers, delta });
+    }
+    return out;
+  }
+
+  const lockTiers = (loc, h) => (loc.hosts[h] ? loc.hosts[h].tiers : []);
+  // How a tier list differs from what the host's lock records.
+  function tierDelta(loc, h, tiers) {
+    const lock = lockTiers(loc, h);
+    return { removed: lock.filter((t) => !tiers.includes(t)).sort(), added: tiers.filter((t) => !lock.includes(t)).sort() };
   }
   const hasDelta = (d) => d.removed.length > 0 || d.added.length > 0;
 
-  function tierRows(loc, store) {
-    const all = new Set(["general", ...store.extra]);
-    for (const h of HOSTS) {
-      if (loc.hosts[h.id]) loc.hosts[h.id].tiers.forEach((t) => all.add(t));
-      store.sel[h.id].forEach((t) => all.add(t));
-    }
+  // Every tier the cached kit offers plus every tier a lock records, so an installed tier the kit dropped can
+  // still be uninstalled.
+  function tierRows(loc) {
+    const all = new Set(zak.state.tiers || []);
+    for (const h of HOSTS) lockTiers(loc, h.id).forEach((t) => all.add(t));
+    if (!all.size) all.add("general");
     return [...all].sort((x, y) => x.localeCompare(y));
   }
 
@@ -109,28 +120,32 @@
       channel: action === "install" || action === "update" ? channel : null,
     };
   }
-  const runKit = (loc, target, action, dry) => invoke("kit_run", { request: request(loc, target.host.id, target.tiers, target.noTiers, action, dry) });
+  const runKit = (loc, target, action, dry) => invoke("kit_run", { request: request(loc, target.host.id, target.tiers, target.noTiers, target.action || action, dry) });
 
-  // Each host gets its own call because hosts can carry different tiers. A project install adds the ticked tiers
-  // on top of general and the detected ones, so a baseline tier that was unticked goes out as an exclusion.
-  // A global install takes the exact list and needs no exclusions.
-  function targetsFor(action, loc, store) {
+  // Each host gets its own call because hosts can carry different tiers. `pick` limits the run to one host with
+  // an explicit tier list (a tier install or uninstall); without it every host uses its lock tiers. A project
+  // install adds the listed tiers on top of general and the detected ones, so a locked tier that is left out
+  // goes out as an exclusion. A global install takes the exact list and needs no exclusions.
+  function targetsFor(action, loc, store, pick) {
     const hosts = [];
     const skipped = [];
     for (const h of HOSTS) {
+      if (pick && !pick[h.id]) continue;
       const installed = !!loc.hosts[h.id];
-      const tiers = [...store.sel[h.id]].sort();
-      const delta = tierDelta(store, h.id);
+      const tiers = [...(pick ? pick[h.id] : store.base[h.id])].sort();
+      const delta = action === "uninstall" || action === "check" ? { removed: [], added: [] } : tierDelta(loc, h.id, tiers);
       const noTiers = loc.path != null && action !== "uninstall" ? delta.removed : [];
-      if (action !== "install" && !installed) {
+      // Applying staged tiers installs a host that has no lock and updates one that has.
+      const run = action === "apply" ? (installed ? "update" : "install") : action;
+      if (run !== "install" && !installed) {
         if (action !== "check") skipped.push(`${h.label} skipped: not installed.`);
         continue;
       }
-      if ((loc.path == null || action === "install") && tiers.length === 0) {
+      if ((loc.path == null || run === "install") && tiers.length === 0) {
         skipped.push(`${h.label} skipped: no tiers selected.`);
         continue;
       }
-      hosts.push({ host: h, tiers, noTiers, delta });
+      hosts.push({ host: h, tiers, noTiers, delta, action: run });
     }
     return { hosts, skipped };
   }
@@ -139,9 +154,10 @@
   const live = (key) => view && view.key === key && view.root.isConnected;
 
   function stateView(loc, store, h) {
-    if (!loc.hosts[h]) return { text: "Not installed", dot: "off" };
+    if (!loc.hosts[h]) return store.want[h].size ? { text: "Install staged", dot: "amber", title: "Tiers are staged for install. Apply them in the Tiers table." } : { text: "Not installed", dot: "off" };
     const s = store.states[h];
-    if (s.kind !== "checking" && s.kind !== "failed" && hasDelta(tierDelta(store, h))) return { text: "Tiers changed", dot: "amber", title: "The ticked tiers differ from the lock file." };
+    // Staged switches beat the check result: the toolbar actions ignore them until they are applied.
+    if (s.kind !== "checking" && hasDelta(tierDelta(loc, h, [...store.want[h]]))) return { text: "Tiers changed", dot: "amber", title: "Tier changes are staged. Apply them in the Tiers table." };
     switch (s.kind) {
       case "checking":
         return { text: "Checking…", dot: "busy" };
@@ -189,6 +205,7 @@
     view.notes.replaceChildren(...store.notes.map((n) => el("li", { text: n })));
     view.notes.hidden = store.notes.length === 0;
     view.results.replaceChildren(...store.results.map((r) => zak.banner(r.kind, r.text)));
+    view.paintTiers();
   }
 
   async function runCheck(key) {
@@ -372,12 +389,12 @@
     return n;
   }
 
-  async function openPlan(action, key) {
+  async function openPlan(action, key, pick) {
     const loc = findLoc(key);
     if (!loc) return;
     const store = getStore(loc);
     if (store.busy) return;
-    const { hosts, skipped } = targetsFor(action, loc, store);
+    const { hosts, skipped } = targetsFor(action, loc, store, pick);
     store.busy = true;
     store.results = [];
     paint(key);
@@ -443,7 +460,7 @@
     }
 
     const ctl = zak.sheet({
-      title: `${VERBS[action][0]} kit on ${nameOf(loc)}`,
+      title: action === "apply" ? `Apply tier changes on ${nameOf(loc)}` : `${VERBS[action][0]} kit on ${nameOf(loc)}`,
       subtitle: loc.path || "Global install",
       subtitleMono: loc.path != null,
       content: el("p", { class: "loading", text: "Planning changes…" }),
@@ -500,48 +517,96 @@
     );
   }
 
-  function tierMatrix(loc, store, key) {
+  // One sentence per host for the footer and the sheet: "Claude Code: install unity, uninstall luna."
+  function changeText(c) {
+    const parts = [];
+    if (c.delta.added.length) parts.push("install " + c.delta.added.join(", "));
+    if (c.delta.removed.length) parts.push("uninstall " + c.delta.removed.join(", "));
+    return `${c.host.label}: ${parts.join("; ")}.`;
+  }
+
+  // A tier list per host: switches stage changes, Apply runs them through one plan sheet, Revert drops them.
+  function tierTable(loc, store, key) {
     const body = el("tbody");
-    const input = el("input", { class: "field", type: "text", placeholder: "Add tier…", "aria-label": "New tier name", autocomplete: "off", spellcheck: "false" });
-    const err = el("p", { class: "field-error", role: "alert", hidden: true });
-    function rebuild() {
-      body.replaceChildren();
-      for (const tier of tierRows(loc, store)) {
-        const tr = el("tr", {}, el("th", { scope: "row", text: tier }));
-        for (const h of HOSTS) {
-          const cb = el("input", { type: "checkbox", "aria-label": `${tier} for ${h.label}`, checked: store.sel[h.id].has(tier) });
-          cb.addEventListener("change", () => {
-            if (cb.checked) store.sel[h.id].add(tier);
-            else store.sel[h.id].delete(tier);
-            paint(key);
-          });
-          tr.append(el("td", { class: "check" }, cb));
-        }
-        body.append(tr);
+    const summary = el("div", { class: "tier-summary", "aria-live": "polite" });
+    const actions = el("div", { class: "tier-actions" });
+    const note = el("p", { class: "help", text: HELP_NO_CATALOG });
+
+    function toggle(h, tier, on) {
+      const want = store.want[h.id];
+      if (on) {
+        // This Mac takes an exact list, so a host's first tier brings general with it.
+        if (loc.path == null && !loc.hosts[h.id] && want.size === 0 && tier !== "general" && tierRows(loc).includes("general")) want.add("general");
+        want.add(tier);
+      } else want.delete(tier);
+      paint(key);
+    }
+
+    function cell(h, tier) {
+      const want = store.want[h.id];
+      const on = want.has(tier);
+      const changed = on !== lockTiers(loc, h.id).includes(tier);
+      // The last tier of an installed host stays on: removing the kit is More > Uninstall.
+      const last = on && want.size === 1 && !!loc.hosts[h.id];
+      const sw = el("input", {
+        type: "checkbox",
+        role: "switch",
+        class: "switch",
+        checked: on,
+        disabled: store.busy || last,
+        "aria-label": `${tier} on ${h.label}`,
+        title: last ? `The only tier on ${h.label}. Use Uninstall… under More to remove the kit.` : "",
+      });
+      sw.addEventListener("change", () => toggle(h, tier, sw.checked));
+      return el("td", { class: "tier-host" }, el("span", { class: "tier-switch" }, el("span", { class: "mark", hidden: !changed, title: "Not applied yet" }), sw));
+    }
+
+    function paintTiers() {
+      const catalog = zak.state.tiers || [];
+      note.hidden = catalog.length > 0;
+      // Rows are rebuilt on every change, so keep keyboard focus on the same switch.
+      const focused = body.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") : null;
+      body.replaceChildren(
+        ...tierRows(loc).map((tier) => {
+          const known = !catalog.length || catalog.includes(tier);
+          return el("tr", {}, el("th", { scope: "row", class: known ? "" : "muted", text: tier, title: known ? "" : "Not in the downloaded kit release." }), ...HOSTS.map((h) => cell(h, tier)));
+        })
+      );
+      if (focused) {
+        const again = [...body.querySelectorAll(".switch")].find((x) => x.getAttribute("aria-label") === focused);
+        if (again) again.focus();
+      }
+      const changes = pendingChanges(loc, store);
+      const count = changes.reduce((n, c) => n + c.delta.added.length + c.delta.removed.length, 0);
+      const installed = HOSTS.some((h) => loc.hosts[h.id]);
+      if (changes.length) {
+        summary.replaceChildren(...changes.map((c) => el("p", { text: changeText(c) })));
+        actions.replaceChildren(
+          el("button", { class: "btn", type: "button", text: "Revert", disabled: store.busy, on: { click: revert } }),
+          el("button", { class: "btn", type: "button", text: `Apply ${plural(count, "Change")}…`, disabled: store.busy, on: { click: apply } })
+        );
+      } else {
+        summary.replaceChildren(el("p", { class: "muted", text: installed ? "Installed tiers match the lock files." : "No tiers installed yet." }));
+        actions.replaceChildren(
+          el("button", { class: "btn", type: "button", text: "Update Installed Tiers…", disabled: store.busy || !installed, title: installed ? "Bring every installed tier up to the latest kit release." : "", on: { click: () => openPlan("update", key) } })
+        );
       }
     }
-    function add() {
-      const v = input.value.trim();
-      if (!v) return;
-      if (!TIER_RE.test(v)) {
-        err.textContent = "Use letters, numbers, - or _. Start with a letter or number.";
-        err.hidden = false;
-        return;
-      }
-      err.hidden = true;
-      store.extra.add(v);
-      HOSTS.forEach((h) => store.sel[h.id].add(v));
-      input.value = "";
-      rebuild();
+
+    function revert() {
+      store.want = null;
+      getStore(loc);
+      paint(key);
     }
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        add();
-      }
-    });
-    rebuild();
-    return el(
+
+    function apply() {
+      const pick = {};
+      for (const c of pendingChanges(loc, store)) pick[c.host.id] = c.tiers;
+      openPlan("apply", key, pick);
+    }
+
+    paintTiers();
+    const node = el(
       "div",
       {},
       el(
@@ -549,14 +614,15 @@
         { class: "group" },
         el(
           "table",
-          { class: "table" },
-          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Tier" }), ...HOSTS.map((h) => el("th", { scope: "col", class: "check", text: h.label })))),
+          { class: "table tiers" },
+          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Tier" }), ...HOSTS.map((h) => el("th", { scope: "col", class: "tier-host", text: h.label })))),
           body
         ),
-        el("div", { class: "group-foot" }, input, el("button", { class: "btn", type: "button", text: "Add", on: { click: add } }))
+        el("div", { class: "group-foot tier-foot" }, summary, actions)
       ),
-      err
+      note
     );
+    return { node, paintTiers };
   }
 
   function render(container, key) {
@@ -589,6 +655,7 @@
     }
     const store = getStore(loc);
     const rows = {};
+    const tiers = tierTable(loc, store, key);
 
     const checkBtn = el("button", { class: "btn", type: "button", text: "Check", on: { click: () => runCheck(key) } });
     const updateBtn = el("button", { class: "btn primary", type: "button", text: "Update…", on: { click: () => openPlan("update", key) } });
@@ -620,11 +687,11 @@
       notes,
       el("h2", { class: "section-title", text: "Tiers" }),
       el("p", { class: "help", text: loc.path == null ? HELP_GLOBAL : HELP_PROJECT }),
-      tierMatrix(loc, store, key)
+      tiers.node
     );
     container.append(toolbar, bodyEl);
 
-    view = { key, root: container, rows, checkBtn, updateBtn, moreBtn, notes, results };
+    view = { key, root: container, rows, checkBtn, updateBtn, moreBtn, notes, results, paintTiers: tiers.paintTiers };
     paint(key);
     if (!checkedOnce.has(key)) runCheck(key);
   }
@@ -650,9 +717,12 @@
   zak.pages.installs = {
     render,
     locationDot,
-    // Defaults follow the lock files again after every refresh.
+    // Tiers follow the lock files again after every refresh.
     onRefresh() {
-      for (const s of stores.values()) s.sel = null;
+      for (const s of stores.values()) {
+        s.base = null;
+        s.want = null;
+      }
     },
   };
 })();

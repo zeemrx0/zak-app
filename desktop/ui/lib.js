@@ -2,7 +2,7 @@
 
 // Shared helpers. All dynamic text (paths, agent names, CLI output) goes through textContent or text nodes.
 window.zak = {
-  state: { installs: null, installsError: null, tools: null, current: null },
+  state: { installs: null, installsError: null, tiers: [], tools: null, current: null },
   pages: {},
 };
 

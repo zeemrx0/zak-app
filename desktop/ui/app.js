@@ -73,11 +73,14 @@
 
   zak.refreshInstalls = async function () {
     S.installsError = null;
+    // The tier list comes from the kit releases the CLI has cached. Without it the pages still work from the locks.
+    const tiers = invoke("kit_tiers").catch(() => []);
     try {
       S.installs = await invoke("installs");
     } catch (e) {
       S.installsError = errText(e);
     }
+    S.tiers = await tiers;
     zak.pages.installs.onRefresh();
     renderSidebar();
     if (S.current && S.current.startsWith("project:") && S.installs && !S.installs.projects.some((p) => "project:" + p.path === S.current)) S.current = "global";

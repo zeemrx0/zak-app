@@ -10,16 +10,19 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
 
 - **This Mac and project pages.** One row per host (Claude Code, Codex) with the version and tiers read from the
   host's `zak-lock.json`, and a state: Not checked, Checking…, In sync, N changes, Lock update (no file changes, but
-  the lock file needs an update), Tiers changed (the ticked tiers differ from the lock), Not installed or Check
+  the lock file needs an update), Tiers changed (staged tier switches differ from the lock), Install staged, Not installed or Check
   failed. Check runs once per location when you first open it, and again from the Check button. Once a location has
   been checked, its sidebar item shows a green, amber or red dot.
-  The tier matrix below the table has one checkbox per tier and host. **Tiers default to what each host's lock file
-  records**, so a plain Update does not remove installed tiers. A host with no lock copies the other host's tiers,
-  or `general`. "Add tier…" adds a name that matches `^[A-Za-z0-9][A-Za-z0-9_-]*$`.
-  The boxes mean different things per scope, because the kit treats them differently. For **This Mac** the ticked
-  tiers are the exact list (`--tier`), so unticking an installed tier removes its files. For a **project** the kit
-  always adds `general` and the tiers it detects, and `--tier` only adds more. The app therefore sends ticked
-  tiers as `--tier` and unticked baseline tiers as `--no-tier`, so unticking removes them.
+  The Tiers table below lists every tier the kit offers, read from the kit releases the `zak` CLI has cached
+  (`zak-kit-cache`), plus any tier a lock file records. Each host column has a switch per tier that starts at what
+  the lock records. Flipping switches only stages changes, and the host table then reads "Tiers changed" (or "Install
+  staged" for a host without the kit) until they are applied or reverted: a blue mark flags each staged switch, and the table foot
+  names them ("Claude Code: install unity; uninstall luna.") next to Revert and "Apply N Changes…". Apply opens one
+  plan sheet for every host that changes: a host with a lock is updated with its new tier list (on a project the
+  dropped tiers are also sent as `--no-tier`), and a host without one is installed. The first tier switched on for a
+  host on This Mac brings `general` with it, because the global tier list is exact. The last tier on an installed
+  host cannot be switched off; use Uninstall… under More. With nothing staged, the foot offers "Update Installed
+  Tiers…". Before any kit has been downloaded, only `general` and installed tiers are listed.
   Every kit operation runs once per host, because hosts can carry different tiers.
 - **Plan sheet.** Update…, and Install… and Uninstall… under More, first run a dry run and open a sheet that lists the
   planned operations per host, grouped by action (removals first, in red, always expanded) and by folder (two

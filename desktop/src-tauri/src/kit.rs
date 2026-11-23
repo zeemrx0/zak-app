@@ -3,6 +3,9 @@
 use crate::tools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -194,6 +197,45 @@ pub fn source_set(choice: &str) -> Result<String, String> {
     }
 }
 
+/// Folder the zak CLI caches kit releases under: `$XDG_DATA_HOME/zak-kit-cache`, else `~/.local/share/zak-kit-cache`.
+pub fn kit_cache_dir() -> Option<PathBuf> {
+    let base = tools::env_value("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| tools::home_dir().map(|h| h.join(".local/share")))?;
+    Some(base.join("zak-kit-cache"))
+}
+
+fn sub_dirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    entries.flatten().filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)).map(|e| e.path()).collect()
+}
+
+/// Tier names the cached kit releases offer. Each `<source>/<channel>/cache.json` names the current package by
+/// id, and that package has one `agents/tiers/<name>/` folder per tier. Read-only; empty when nothing is cached.
+pub fn cached_tiers(cache: &Path) -> Vec<String> {
+    let mut out = BTreeSet::new();
+    for source in sub_dirs(cache) {
+        for channel in sub_dirs(&source) {
+            let id = fs::read_to_string(channel.join("cache.json"))
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .and_then(|v| v.get("id")?.as_str().map(str::to_string));
+            let Some(id) = id.filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())) else { continue };
+            for tier in sub_dirs(&channel.join(id).join("package/agents/tiers")) {
+                if let Some(name) = tier.file_name().and_then(|n| n.to_str()).filter(|n| valid_tier(n)) {
+                    out.insert(name.to_string());
+                }
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+pub fn available_tiers() -> Vec<String> {
+    kit_cache_dir().map(|d| cached_tiers(&d)).unwrap_or_default()
+}
+
 fn error_text(r: &RunResult) -> String {
     let e = r.stderr.trim();
     if e.is_empty() {
@@ -344,5 +386,25 @@ mod tests {
         assert!(source_args("local:").is_err());
         assert!(source_args("local:--x").is_err());
         assert!(source_args("weird").is_err());
+    }
+
+    #[test]
+    fn cached_tiers_reads_the_current_package_of_each_source() {
+        let root = std::env::temp_dir().join(format!("zak-desktop-tiers-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let current = root.join("src1/stable");
+        for t in ["general", "unity", "bad name"] {
+            fs::create_dir_all(current.join("abc123/package/agents/tiers").join(t)).unwrap();
+        }
+        fs::create_dir_all(current.join("ffff00/package/agents/tiers/stale")).unwrap();
+        fs::write(current.join("cache.json"), r#"{"id":"abc123"}"#).unwrap();
+        let other = root.join("src2/beta");
+        fs::create_dir_all(other.join("dd/package/agents/tiers/luna")).unwrap();
+        fs::write(other.join("cache.json"), r#"{"id":"dd"}"#).unwrap();
+        fs::create_dir_all(root.join("src3/stable/x/package/agents/tiers/evil")).unwrap();
+        fs::write(root.join("src3/stable/cache.json"), r#"{"id":"../x"}"#).unwrap();
+        assert_eq!(cached_tiers(&root), ["general", "luna", "unity"]);
+        assert!(cached_tiers(&root.join("missing")).is_empty());
+        let _ = fs::remove_dir_all(&root);
     }
 }

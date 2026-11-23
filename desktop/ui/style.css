@@ -1,3 +1,6 @@
+/* Hallmark · checked: 2026-11-23 · genre: modern-minimal (inferred) · shape: app screen · scope: Tiers section of the install pages
+ * floor: 0 new FAIL in the section · structural: none · the 12 older FAILs across the stylesheet are printed, not fixed
+ * built: the project · redesign: full (section) · system: DESIGN.md (locked) · v2.0.0 */
 /* macOS source-list utility. Tokens on :root, light and dark through prefers-color-scheme. */
 :root {
   color-scheme: light dark;
@@ -208,6 +211,26 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .state { display: flex; align-items: center; gap: 8px; }
 .table td.state { display: table-cell; }
 .state .dot { margin-right: 8px; vertical-align: middle; }
+.table.tiers th.tier-host, .table.tiers td.tier-host { width: 120px; text-align: center; }
+.tier-switch { display: inline-flex; align-items: center; justify-content: center; position: relative; }
+.tier-switch .mark { position: absolute; right: calc(100% + 2px); margin: 0; }
+.tier-foot { align-items: center; justify-content: space-between; gap: 12px; }
+.tier-summary { min-width: 0; font-size: 12px; }
+.tier-summary p { overflow-wrap: anywhere; }
+.tier-actions { display: flex; gap: 6px; flex: none; }
+/* Switch: a native checkbox with role="switch", drawn as a 26x15 track and a sliding knob. */
+input[type="checkbox"].switch { appearance: none; position: relative; width: 26px; height: 15px; margin: 0; border-radius: 8px; background: var(--seg-track); box-shadow: inset 0 0 0 1px var(--hair-strong); cursor: default; transition: background-color 120ms ease; }
+input[type="checkbox"].switch::before { content: ""; position: absolute; top: 1.5px; left: 1.5px; width: 12px; height: 12px; border-radius: 50%; background: var(--on-accent); box-shadow: 0 1px 2px var(--hair-strong); transition: transform 120ms ease; }
+input[type="checkbox"].switch:checked { background: var(--accent); box-shadow: none; }
+input[type="checkbox"].switch:checked::before { transform: translateX(11px); }
+input[type="checkbox"].switch:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--text-2); }
+input[type="checkbox"].switch:checked:hover:not(:disabled) { box-shadow: none; filter: brightness(1.08); }
+input[type="checkbox"].switch:active:not(:disabled)::before { transform: scale(0.92); }
+input[type="checkbox"].switch:checked:active:not(:disabled)::before { transform: translateX(11px) scale(0.92); }
+input[type="checkbox"].switch:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring); }
+input[type="checkbox"].switch:disabled { opacity: 0.45; cursor: not-allowed; background: var(--hair); }
+input[type="checkbox"].switch:checked:disabled { background: var(--accent); }
+input[type="checkbox"].switch:disabled::before { background: var(--group-head); }
 .state.bad { color: var(--red); }
 .form-row { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 6px 12px; }
 .form-row + .form-row { border-top: 1px solid var(--hair); }
@@ -348,5 +371,6 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.2); inset: 52px 0 0 0; }
   dialog.sheet[open] { animation: none; }
   .progress-run { animation: none; width: 100%; opacity: 0.5; }
   .dot.busy { animation: none; }
+  input[type="checkbox"].switch, input[type="checkbox"].switch::before { transition: none; }
   .plan-folder summary::before { transition: none; }
 }
