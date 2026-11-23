@@ -211,13 +211,19 @@ input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px;
 .state { display: flex; align-items: center; gap: 8px; }
 .table td.state { display: table-cell; }
 .state .dot { margin-right: 8px; vertical-align: middle; }
-.table.tiers th.tier-host, .table.tiers td.tier-host { width: 120px; text-align: center; }
-.tier-switch { display: inline-flex; align-items: center; justify-content: center; position: relative; }
-.tier-switch .mark { position: absolute; right: calc(100% + 2px); margin: 0; }
-.tier-foot { align-items: center; justify-content: space-between; gap: 12px; }
-.tier-summary { min-width: 0; font-size: 12px; }
-.tier-summary p { overflow-wrap: anywhere; }
-.tier-actions { display: flex; gap: 6px; flex: none; }
+.agent-grid { display: flex; flex-direction: column; gap: 12px; }
+.agent { display: flex; flex-direction: column; }
+.agent-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 12px; border-bottom: 1px solid var(--hair); }
+.agent-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agent-title h3 { font-size: 13px; font-weight: 600; }
+.agent-title .muted { font-size: 11.5px; }
+.agent-head .state { flex: none; }
+.agent-head .state .dot { margin-right: 0; }
+.table.agent-tiers th.agent-switch, .table.agent-tiers td.agent-switch { width: 72px; text-align: right; }
+.table.agent-tiers td.agent-switch .switch { vertical-align: middle; }
+.agent-foot { align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; }
+.agent-summary { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+.agent-actions { display: flex; gap: 8px; flex: none; }
 /* Switch: a native checkbox with role="switch", drawn as a 26x15 track and a sliding knob. */
 input[type="checkbox"].switch { appearance: none; position: relative; width: 26px; height: 15px; margin: 0; border-radius: 8px; background: var(--seg-track); box-shadow: inset 0 0 0 1px var(--hair-strong); cursor: default; transition: background-color 120ms ease; }
 input[type="checkbox"].switch::before { content: ""; position: absolute; top: 1.5px; left: 1.5px; width: 12px; height: 12px; border-radius: 50%; background: var(--on-accent); box-shadow: 0 1px 2px var(--hair-strong); transition: transform 120ms ease; }

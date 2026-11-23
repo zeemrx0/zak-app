@@ -16,8 +16,8 @@
   let channel = null; // null (default) | "stable" | "beta"
   let view = null; // refs of the page currently on screen
 
-  const HELP_GLOBAL = "Switch a tier on to install it, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. The first tier on a host brings general with it.";
-  const HELP_PROJECT = "Switch a tier on to install it, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. The kit also adds general and the tiers it detects in the project.";
+  const HELP_GLOBAL = "Switch a tier on to install it on that agent, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. An agent's first tier brings general with it.";
+  const HELP_PROJECT = "Switch a tier on to install it on that agent, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. The kit also adds general and the tiers it detects in the project.";
   const HELP_NO_CATALOG = "The full tier list appears once the kit has been downloaded, for example after the first install. Until then only general and installed tiers are listed.";
 
   const keyOf = (loc) => (loc.path == null ? "global" : "project:" + loc.path);
@@ -44,17 +44,6 @@
     }
     if (!s.want) s.want = { claude: new Set(lockTiers(loc, "claude")), codex: new Set(lockTiers(loc, "codex")) };
     return s;
-  }
-
-  // The staged tier switches against the locks: one entry per host that would change.
-  function pendingChanges(loc, store) {
-    const out = [];
-    for (const h of HOSTS) {
-      const tiers = [...store.want[h.id]].sort();
-      const delta = tierDelta(loc, h.id, tiers);
-      if (hasDelta(delta)) out.push({ host: h, tiers, delta });
-    }
-    return out;
   }
 
   const lockTiers = (loc, h) => (loc.hosts[h] ? loc.hosts[h].tiers : []);
@@ -486,51 +475,43 @@
     return loc.path == null ? "~/.claude · ~/.codex" : loc.path;
   }
 
-  function hostTable(loc, store, rows) {
-    const body = el("tbody");
-    for (const h of HOSTS) {
-      const lock = loc.hosts[h.id];
-      const dot = el("span", { class: "dot off" });
-      const text = el("span");
-      const cell = el("td", { class: "state" }, dot, text);
-      rows[h.id] = { dot, text, cell };
-      body.append(
-        el(
-          "tr",
-          {},
-          el("th", { scope: "row", class: "host", text: h.label }),
-          el("td", { class: "num" + (lock ? "" : " muted"), text: lock ? String(lock.kit_version) : "—" }),
-          el("td", { class: lock ? "" : "muted", text: lock ? (lock.tiers.length ? lock.tiers.join(", ") : "No tiers") : "—" }),
-          cell
-        )
-      );
-    }
-    return el(
-      "div",
-      { class: "group" },
-      el(
-        "table",
-        { class: "table" },
-        el("thead", {}, el("tr", {}, ...["Host", "Version", "Tiers", "State"].map((t) => el("th", { scope: "col", text: t })))),
-        body
-      )
-    );
-  }
-
-  // One sentence per host for the footer and the sheet: "Claude Code: install unity, uninstall luna."
-  function changeText(c) {
+  // What one host would change: "Install unity. Uninstall luna."
+  function changeText(delta) {
     const parts = [];
-    if (c.delta.added.length) parts.push("install " + c.delta.added.join(", "));
-    if (c.delta.removed.length) parts.push("uninstall " + c.delta.removed.join(", "));
-    return `${c.host.label}: ${parts.join("; ")}.`;
+    if (delta.added.length) parts.push(`Install ${delta.added.join(", ")}.`);
+    if (delta.removed.length) parts.push(`Uninstall ${delta.removed.join(", ")}.`);
+    return parts.join(" ");
   }
 
-  // A tier list per host: switches stage changes, Apply runs them through one plan sheet, Revert drops them.
-  function tierTable(loc, store, key) {
-    const body = el("tbody");
-    const summary = el("div", { class: "tier-summary", "aria-live": "polite" });
-    const actions = el("div", { class: "tier-actions" });
+  // One card per host: its version and state, a switch per tier, and its own Apply, Revert and Update. Switches
+  // only stage changes; Apply runs that host's changes through the plan sheet.
+  function agentCards(loc, store, key, rows) {
+    const grid = el("div", { class: "agent-grid" });
     const note = el("p", { class: "help", text: HELP_NO_CATALOG });
+    const cards = HOSTS.map((h) => {
+      const dot = el("span", { class: "dot off" });
+      const text = el("span", { class: "status-text" });
+      const cell = el("span", { class: "state" }, dot, text);
+      rows[h.id] = { dot, text, cell };
+      const lock = loc.hosts[h.id];
+      const body = el("tbody");
+      const summary = el("p", { class: "agent-summary", "aria-live": "polite" });
+      const actions = el("div", { class: "agent-actions" });
+      const card = el(
+        "section",
+        { class: "group agent", "aria-labelledby": `agent-${h.id}` },
+        el(
+          "header",
+          { class: "agent-head" },
+          el("div", { class: "agent-title" }, el("h3", { id: `agent-${h.id}`, text: h.label }), lock && el("span", { class: "muted num", text: `Kit ${lock.kit_version}` })),
+          cell
+        ),
+        el("table", { class: "table agent-tiers" }, el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Tier" }), el("th", { scope: "col", class: "agent-switch", text: "Enabled" }))), body),
+        el("div", { class: "group-foot agent-foot" }, summary, actions)
+      );
+      return { h, body, summary, actions, card };
+    });
+    grid.append(...cards.map((c) => c.card));
 
     function toggle(h, tier, on) {
       const want = store.want[h.id];
@@ -542,12 +523,13 @@
       paint(key);
     }
 
-    function cell(h, tier) {
+    function row(h, tier, catalog) {
       const want = store.want[h.id];
       const on = want.has(tier);
       const changed = on !== lockTiers(loc, h.id).includes(tier);
       // The last tier of an installed host stays on: removing the kit is More > Uninstall.
       const last = on && want.size === 1 && !!loc.hosts[h.id];
+      const known = !catalog.length || catalog.includes(tier);
       const sw = el("input", {
         type: "checkbox",
         role: "switch",
@@ -558,71 +540,54 @@
         title: last ? `The only tier on ${h.label}. Use Uninstall… under More to remove the kit.` : "",
       });
       sw.addEventListener("change", () => toggle(h, tier, sw.checked));
-      return el("td", { class: "tier-host" }, el("span", { class: "tier-switch" }, el("span", { class: "mark", hidden: !changed, title: "Not applied yet" }), sw));
+      return el(
+        "tr",
+        {},
+        el("th", { scope: "row", class: known ? "" : "muted", title: known ? "" : "Not in the downloaded kit release." }, el("span", { class: "mark", hidden: !changed, title: "Not applied yet" }), tier),
+        el("td", { class: "agent-switch" }, sw)
+      );
     }
 
     function paintTiers() {
       const catalog = zak.state.tiers || [];
       note.hidden = catalog.length > 0;
       // Rows are rebuilt on every change, so keep keyboard focus on the same switch.
-      const focused = body.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") : null;
-      body.replaceChildren(
-        ...tierRows(loc).map((tier) => {
-          const known = !catalog.length || catalog.includes(tier);
-          return el("tr", {}, el("th", { scope: "row", class: known ? "" : "muted", text: tier, title: known ? "" : "Not in the downloaded kit release." }), ...HOSTS.map((h) => cell(h, tier)));
-        })
-      );
-      if (focused) {
-        const again = [...body.querySelectorAll(".switch")].find((x) => x.getAttribute("aria-label") === focused);
-        if (again) again.focus();
+      const focused = grid.contains(document.activeElement) ? document.activeElement.getAttribute("aria-label") : null;
+      const tiers = tierRows(loc);
+      for (const c of cards) {
+        const { h } = c;
+        const lock = loc.hosts[h.id];
+        c.body.replaceChildren(...tiers.map((t) => row(h, t, catalog)));
+        const delta = tierDelta(loc, h.id, [...store.want[h.id]].sort());
+        const n = delta.added.length + delta.removed.length;
+        if (n) {
+          c.summary.className = "agent-summary";
+          c.summary.textContent = changeText(delta);
+          c.actions.replaceChildren(
+            el("button", { class: "btn", type: "button", text: "Revert", disabled: store.busy, on: { click: () => revert(h) } }),
+            el("button", { class: "btn", type: "button", text: `Apply ${plural(n, "Change")}…`, disabled: store.busy, on: { click: () => openPlan("apply", key, { [h.id]: [...store.want[h.id]].sort() }) } })
+          );
+        } else {
+          c.summary.className = "agent-summary muted";
+          c.summary.textContent = lock ? plural(lock.tiers.length, "tier") + " installed." : "Switch on a tier to install the kit.";
+          c.actions.replaceChildren(
+            el("button", { class: "btn", type: "button", text: "Update…", disabled: store.busy || !lock, title: lock ? `Update every installed tier on ${h.label}.` : "", on: { click: () => openPlan("update", key, { [h.id]: [...lock.tiers] }) } })
+          );
+        }
       }
-      const changes = pendingChanges(loc, store);
-      const count = changes.reduce((n, c) => n + c.delta.added.length + c.delta.removed.length, 0);
-      const installed = HOSTS.some((h) => loc.hosts[h.id]);
-      if (changes.length) {
-        summary.replaceChildren(...changes.map((c) => el("p", { text: changeText(c) })));
-        actions.replaceChildren(
-          el("button", { class: "btn", type: "button", text: "Revert", disabled: store.busy, on: { click: revert } }),
-          el("button", { class: "btn", type: "button", text: `Apply ${plural(count, "Change")}…`, disabled: store.busy, on: { click: apply } })
-        );
-      } else {
-        summary.replaceChildren(el("p", { class: "muted", text: installed ? "Installed tiers match the lock files." : "No tiers installed yet." }));
-        actions.replaceChildren(
-          el("button", { class: "btn", type: "button", text: "Update Installed Tiers…", disabled: store.busy || !installed, title: installed ? "Bring every installed tier up to the latest kit release." : "", on: { click: () => openPlan("update", key) } })
-        );
+      if (focused) {
+        const again = [...grid.querySelectorAll(".switch")].find((x) => x.getAttribute("aria-label") === focused);
+        if (again) again.focus();
       }
     }
 
-    function revert() {
-      store.want = null;
-      getStore(loc);
+    function revert(h) {
+      store.want[h.id] = new Set(lockTiers(loc, h.id));
       paint(key);
     }
 
-    function apply() {
-      const pick = {};
-      for (const c of pendingChanges(loc, store)) pick[c.host.id] = c.tiers;
-      openPlan("apply", key, pick);
-    }
-
     paintTiers();
-    const node = el(
-      "div",
-      {},
-      el(
-        "div",
-        { class: "group" },
-        el(
-          "table",
-          { class: "table tiers" },
-          el("thead", {}, el("tr", {}, el("th", { scope: "col", text: "Tier" }), ...HOSTS.map((h) => el("th", { scope: "col", class: "tier-host", text: h.label })))),
-          body
-        ),
-        el("div", { class: "group-foot tier-foot" }, summary, actions)
-      ),
-      note
-    );
-    return { node, paintTiers };
+    return { node: el("div", { class: "agents" }, grid, note), paintTiers };
   }
 
   function render(container, key) {
@@ -655,7 +620,7 @@
     }
     const store = getStore(loc);
     const rows = {};
-    const tiers = tierTable(loc, store, key);
+    const agents = agentCards(loc, store, key, rows);
 
     const checkBtn = el("button", { class: "btn", type: "button", text: "Check", on: { click: () => runCheck(key) } });
     const updateBtn = el("button", { class: "btn primary", type: "button", text: "Update…", on: { click: () => openPlan("update", key) } });
@@ -683,15 +648,13 @@
     if (loc.error) bodyEl.append(zak.banner("error", `Could not read a lock file: ${loc.error}`));
     bodyEl.append(
       results,
-      hostTable(loc, store, rows),
-      notes,
-      el("h2", { class: "section-title", text: "Tiers" }),
       el("p", { class: "help", text: loc.path == null ? HELP_GLOBAL : HELP_PROJECT }),
-      tiers.node
+      agents.node,
+      notes
     );
     container.append(toolbar, bodyEl);
 
-    view = { key, root: container, rows, checkBtn, updateBtn, moreBtn, notes, results, paintTiers: tiers.paintTiers };
+    view = { key, root: container, rows, checkBtn, updateBtn, moreBtn, notes, results, paintTiers: agents.paintTiers };
     paint(key);
     if (!checkedOnce.has(key)) runCheck(key);
   }

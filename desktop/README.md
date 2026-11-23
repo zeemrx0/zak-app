@@ -8,21 +8,21 @@ installed `zak` CLI and the installed `z-delegate` helper and holds no kit or va
 The sidebar lists installs (This Mac and each project you add), then configuration pages. A status line at the foot
 shows the `zak` and `node` versions. Click it for the tool paths and whether the agents config file exists.
 
-- **This Mac and project pages.** One row per host (Claude Code, Codex) with the version and tiers read from the
-  host's `zak-lock.json`, and a state: Not checked, Checking…, In sync, N changes, Lock update (no file changes, but
-  the lock file needs an update), Tiers changed (staged tier switches differ from the lock), Install staged, Not installed or Check
-  failed. Check runs once per location when you first open it, and again from the Check button. Once a location has
-  been checked, its sidebar item shows a green, amber or red dot.
-  The Tiers table below lists every tier the kit offers, read from the kit releases the `zak` CLI has cached
-  (`zak-kit-cache`), plus any tier a lock file records. Each host column has a switch per tier that starts at what
-  the lock records. Flipping switches only stages changes, and the host table then reads "Tiers changed" (or "Install
-  staged" for a host without the kit) until they are applied or reverted: a blue mark flags each staged switch, and the table foot
-  names them ("Claude Code: install unity; uninstall luna.") next to Revert and "Apply N Changes…". Apply opens one
-  plan sheet for every host that changes: a host with a lock is updated with its new tier list (on a project the
-  dropped tiers are also sent as `--no-tier`), and a host without one is installed. The first tier switched on for a
-  host on This Mac brings `general` with it, because the global tier list is exact. The last tier on an installed
-  host cannot be switched off; use Uninstall… under More. With nothing staged, the foot offers "Update Installed
-  Tiers…". Before any kit has been downloaded, only `general` and installed tiers are listed.
+- **This Mac and project pages.** One card per agent (Claude Code, Codex), stacked vertically, so a new agent adds a
+  card below. The card head shows the agent, the kit version from its `zak-lock.json` and a state: Not checked,
+  Checking…, In sync, N changes, Lock update (no file changes, but the lock file needs an update), Tiers changed
+  (staged switches differ from the lock), Install staged, Not installed or Check failed. Check runs once per location
+  when you first open it, and again from the Check button. Once a location has been checked, its sidebar item shows
+  a green, amber or red dot.
+  Below the head is one switch per tier. The list is every tier the kit offers, read from the kit releases the `zak`
+  CLI has cached (`zak-kit-cache`), plus any tier a lock records. Switches start at what the lock records and only
+  stage changes: a blue mark flags each staged tier, and the card foot names them ("Install unity. Uninstall luna.")
+  next to Revert and "Apply N Changes…", which opens the plan sheet for that agent only. An agent with a lock is
+  updated with its new tier list (on a project the dropped tiers are also sent as `--no-tier`); an agent without one
+  is installed. On This Mac an agent's first tier brings `general` with it, because the global tier list is exact.
+  The last tier on an installed agent cannot be switched off; use Uninstall… under More. With nothing staged, the
+  foot offers Update…, which updates every installed tier on that agent. Before any kit has been downloaded, only
+  `general` and installed tiers are listed.
   Every kit operation runs once per host, because hosts can carry different tiers.
 - **Plan sheet.** Update…, and Install… and Uninstall… under More, first run a dry run and open a sheet that lists the
   planned operations per host, grouped by action (removals first, in red, always expanded) and by folder (two
