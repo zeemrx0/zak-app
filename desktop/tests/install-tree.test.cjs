@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { closure, requiredBy, nodeState, toggleNode, itemDelta, followSummary, buildTree, sameSet } = require("../ui/install-tree.js");
+const { linkFlags, closure, requiredBy, nodeState, toggleNode, itemDelta, followSummary, buildTree, sameSet } = require("../ui/install-tree.js");
 
 const item = (tier, category, label, requires = []) => ({ id: `${tier}/${category}/${label}`, tier, category, label, requires });
 const ids = (...labels) => labels.map((l) => `general/skills/${l}`);
@@ -168,4 +168,26 @@ test("buildTree groups tiers, orders kinds and leaves empty kinds out", () => {
 test("buildTree adds a tier that the tier list omits", () => {
   const tree = buildTree([item("extra", "skills", "z-x")], ["general"]);
   assert.deepEqual(tree.map((t) => t.tier), ["extra"]);
+});
+
+const LIST = ids("a", "b");
+
+test("linkFlags links an installed host with the flag alone", () => {
+  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: true, items: LIST }), { follow: "claude", noFollow: false, select: [] });
+});
+
+test("linkFlags sends the items with the link for a host that is not installed", () => {
+  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: false, items: LIST }), { follow: "claude", noFollow: false, select: LIST });
+});
+
+test("linkFlags unlinks with the flag alone while the source is installed", () => {
+  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: true, items: LIST }), { follow: null, noFollow: true, select: [] });
+});
+
+test("linkFlags sends the current items with an unlink when the source is not installed", () => {
+  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: false, items: LIST }), { follow: null, noFollow: true, select: LIST });
+});
+
+test("linkFlags sends the staged items when nothing is linked", () => {
+  assert.deepEqual(linkFlags({ items: LIST }), { follow: null, noFollow: false, select: LIST });
 });

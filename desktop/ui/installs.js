@@ -194,13 +194,15 @@
     if (st.link) {
       const select = sorted(store.hs[st.link].origExplicit);
       if (!select.length) return `${h.label} skipped: ${hostOf(st.link).label} has no items.`;
-      job.follow = st.link;
-      job.select = select;
+      const flags = T.linkFlags({ link: st.link, hostInstalled: installedHost(loc, h.id), items: select });
+      job.follow = flags.follow;
+      if (flags.select.length) job.select = flags.select;
+      job.preview = select;
     } else if (st.origLink) {
-      // Unlink keeps the files: the host's current items go with the flag, so the kit never falls back to tiers.
-      job.noFollow = true;
       const select = sorted(st.origExplicit);
-      if (select.length) job.select = select;
+      const flags = T.linkFlags({ unlink: true, sourceInstalled: installedHost(loc, st.origLink), items: select });
+      job.noFollow = flags.noFollow;
+      if (flags.select.length) job.select = flags.select;
     } else {
       if (!st.explicit.size) return `${h.label} skipped: no items selected.`;
       job.select = sorted(st.explicit);
@@ -400,8 +402,9 @@
   function sectionLines(store, p) {
     const out = [];
     const job = p.job;
-    if (job && job.select && store.hs && store.hs[p.host.id]) {
-      const delta = T.itemDelta(beforeSet(store, p.host.id), closureOf(store, job.select));
+    const after = job && (job.preview || job.select);
+    if (after && store.hs && store.hs[p.host.id]) {
+      const delta = T.itemDelta(beforeSet(store, p.host.id), closureOf(store, after));
       if (delta.added.length || delta.removed.length) out.push(itemsLine(store, delta));
     }
     if (job && job.follow && p.host.id === job.host.id) out.push(el("p", { class: "plan-tiers", text: `Follows ${hostOf(job.follow).label}.` }));
