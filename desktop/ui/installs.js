@@ -194,8 +194,16 @@
     if (st.link) {
       const select = sorted(store.hs[st.link].origExplicit);
       if (!select.length) return `${h.label} skipped: ${hostOf(st.link).label} has no items.`;
-      const flags = T.linkFlags({ link: st.link, hostInstalled: installedHost(loc, h.id), items: select });
+      const source = loc.hosts[st.link];
+      const flags = T.linkFlags({
+        link: st.link,
+        hostInstalled: installedHost(loc, h.id),
+        sourceSaved: source ? source.saved : undefined,
+        sourceTiers: source ? sorted(source.tiers) : [],
+        items: select,
+      });
       job.follow = flags.follow;
+      if (flags.tiers.length) job.tiers = flags.tiers;
       if (flags.select.length) job.select = flags.select;
       job.preview = select;
     } else if (st.origLink) {

@@ -489,6 +489,18 @@ mod tests {
     }
 
     #[test]
+    fn follow_may_carry_the_source_tiers() {
+        let mut r = req(Action::Install, Scope::Global);
+        r.targets = vec!["codex".into()];
+        r.tiers = vec!["general".into(), "unity".into()];
+        r.follow = Some("claude".into());
+        assert_eq!(
+            build_argv(&r).unwrap(),
+            ["kit", "install", "--target", "codex", "--global", "--tier", "general,unity", "--follow", "claude", "--json"]
+        );
+    }
+
+    #[test]
     fn follow_rules() {
         let mut r = req(Action::Update, Scope::Project("/p".into()));
         r.tiers.clear();

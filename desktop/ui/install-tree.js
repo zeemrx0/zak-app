@@ -106,10 +106,16 @@
   // A host with no install needs the items, because a first install cannot run without tiers or items. An unlink
   // sends the flag alone while its source is installed, because the kit then resolves through the source and keeps
   // inherited tiers. Without the source, the current items go along so the kit never falls back to tier defaults.
-  function linkFlags({ link, unlink, hostInstalled, sourceInstalled, items }) {
-    if (link) return { follow: link, noFollow: false, select: hostInstalled ? [] : items };
-    if (unlink) return { follow: null, noFollow: true, select: sourceInstalled ? [] : items };
-    return { follow: null, noFollow: false, select: items };
+  // A first install that follows a tier-only source (`sourceSaved` false) sends the source's tiers, not items, so the
+  // new lock does not record an item list the source lacks and the next check stays in sync.
+  function linkFlags({ link, unlink, hostInstalled, sourceInstalled, sourceSaved, sourceTiers, items }) {
+    if (link) {
+      if (hostInstalled) return { follow: link, noFollow: false, select: [], tiers: [] };
+      if (sourceSaved === false) return { follow: link, noFollow: false, select: [], tiers: sourceTiers || [] };
+      return { follow: link, noFollow: false, select: items, tiers: [] };
+    }
+    if (unlink) return { follow: null, noFollow: true, select: sourceInstalled ? [] : items, tiers: [] };
+    return { follow: null, noFollow: false, select: items, tiers: [] };
   }
 
   return { linkFlags, closure, requiredBy, nodeState, toggleNode, itemDelta, followSummary, buildTree, sameSet };

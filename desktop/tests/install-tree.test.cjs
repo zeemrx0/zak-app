@@ -173,21 +173,31 @@ test("buildTree adds a tier that the tier list omits", () => {
 const LIST = ids("a", "b");
 
 test("linkFlags links an installed host with the flag alone", () => {
-  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: true, items: LIST }), { follow: "claude", noFollow: false, select: [] });
+  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: true, items: LIST }), { follow: "claude", noFollow: false, select: [], tiers: [] });
 });
 
 test("linkFlags sends the items with the link for a host that is not installed", () => {
-  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: false, items: LIST }), { follow: "claude", noFollow: false, select: LIST });
+  assert.deepEqual(linkFlags({ link: "claude", hostInstalled: false, items: LIST }), { follow: "claude", noFollow: false, select: LIST, tiers: [] });
 });
 
 test("linkFlags unlinks with the flag alone while the source is installed", () => {
-  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: true, items: LIST }), { follow: null, noFollow: true, select: [] });
+  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: true, items: LIST }), { follow: null, noFollow: true, select: [], tiers: [] });
 });
 
 test("linkFlags sends the current items with an unlink when the source is not installed", () => {
-  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: false, items: LIST }), { follow: null, noFollow: true, select: LIST });
+  assert.deepEqual(linkFlags({ unlink: true, sourceInstalled: false, items: LIST }), { follow: null, noFollow: true, select: LIST, tiers: [] });
 });
 
 test("linkFlags sends the staged items when nothing is linked", () => {
-  assert.deepEqual(linkFlags({ items: LIST }), { follow: null, noFollow: false, select: LIST });
+  assert.deepEqual(linkFlags({ items: LIST }), { follow: null, noFollow: false, select: LIST, tiers: [] });
+});
+
+test("linkFlags sends the source tiers with the link for a host that is not installed and a tier-only source", () => {
+  const flags = linkFlags({ link: "claude", hostInstalled: false, sourceSaved: false, sourceTiers: ["general", "unity"], items: LIST });
+  assert.deepEqual(flags, { follow: "claude", noFollow: false, select: [], tiers: ["general", "unity"] });
+});
+
+test("linkFlags keeps the items for a source that saved its item list", () => {
+  const flags = linkFlags({ link: "claude", hostInstalled: false, sourceSaved: true, sourceTiers: ["general"], items: LIST });
+  assert.deepEqual(flags, { follow: "claude", noFollow: false, select: LIST, tiers: [] });
 });
