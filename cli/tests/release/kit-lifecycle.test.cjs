@@ -346,3 +346,89 @@ test('removed targets stop before any lock, download, or prompt', async t => {
     assert.deepEqual(f.events, []);
   }
 });
+function selectionPackage(t, protocol) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zak-selection-pkg-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify(protocol ? { kitSelectionProtocol: protocol } : {}));
+  return dir;
+}
+function follower(f, follows = 'claude') {
+  seed(f, 'codex', 'project');
+  const codex = resolveTarget({ host: 'codex', scope: 'project', project: f.root, env: f.env });
+  fs.mkdirSync(path.dirname(codex.lockPath), { recursive: true });
+  fs.writeFileSync(codex.lockPath, JSON.stringify({ follows }));
+}
+function recordCalls(f) {
+  const calls = [], normal = f.deps.runControlled;
+  f.deps.runControlled = (pkg, args, callbacks) => { calls.push(args); return normal(pkg, args, callbacks); };
+  return calls;
+}
+test('target parser reads item selection flags and validates them', () => {
+  const parsed = targetArgs(['/p', '--target', 'claude', '--select', 'a/skills/z-x', '--follow', 'codex']);
+  assert.equal(parsed.selection, true);
+  assert.deepEqual(parsed.rest, ['/p', '--select', 'a/skills/z-x', '--follow', 'codex']);
+  assert.equal(targetArgs(['--no-follow']).selection, true);
+  assert.equal(targetArgs(['--tier', 'general']).selection, false);
+  assert.throws(() => targetArgs(['--select']), /missing kit select value/);
+  assert.throws(() => targetArgs(['--select', '--json']), /missing kit select value/);
+  assert.throws(() => targetArgs(['--target', 'claude', '--follow']), /missing kit follow value/);
+  assert.throws(() => targetArgs(['--target', 'claude', '--follow', 'omp']), /invalid kit follow host/);
+  assert.throws(() => targetArgs(['--target', 'claude,codex', '--follow', 'claude']), /exactly one --target/);
+  assert.throws(() => targetArgs(['--follow', 'claude']), /exactly one --target/);
+});
+test('selection flags reach the kit unchanged before the target and operation flags', async t => {
+  const f = fixture(t); f.pin();
+  f.deps.kitSnapshot = () => ({ pkg: selectionPackage(t, 1), snapshot, cleanup() {} });
+  const calls = recordCalls(f);
+  assert.equal(await f.run('update', [f.root, '--target', 'claude', '--select', 'a/skills/z-x,a/rules/z-y']), 0);
+  assert.deepEqual(calls, [[f.root, '--select', 'a/skills/z-x,a/rules/z-y', '--target', 'claude', '--update', '--force']]);
+});
+test('a kit without item selection is refused before any pin is written', async t => {
+  for (const flags of [['--select', 'a/skills/z-x'], ['--no-follow']]) {
+    for (const protocol of [undefined, 2]) {
+      const f = fixture(t); f.pin();
+      f.deps.kitSnapshot = () => ({ pkg: selectionPackage(t, protocol), snapshot, cleanup() { f.events.push('cleanup'); } });
+      const calls = recordCalls(f);
+      assert.equal(await f.run('update', [f.root, '--target', 'claude', ...flags]), 1);
+      assert.deepEqual(calls, []);
+      for (const event of ['pending', 'prepare', 'mutate']) assert.equal(f.events.includes(event), false);
+      assert.ok(f.events.includes('cleanup'));
+    }
+  }
+});
+test('update on a source also updates a host that follows it, after the source', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  f.deps.kitSnapshot = () => ({ pkg: selectionPackage(t, 1), snapshot, cleanup() {} });
+  const calls = recordCalls(f);
+  assert.equal(await f.run('update', [f.root, '--target', 'claude', '--select', 'a/skills/z-x', '--json']), 0);
+  assert.deepEqual(calls, [
+    [f.root, '--select', 'a/skills/z-x', '--json', '--target', 'claude', '--update', '--force'],
+    [f.root, '--select', 'a/skills/z-x', '--json', '--follow', 'claude', '--target', 'codex', '--update', '--force']]);
+});
+test('check on a source also checks its follower without a follow flag', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  const calls = recordCalls(f);
+  assert.equal(await f.run('check', [f.root, '--target', 'claude', '--json']), 0);
+  assert.deepEqual(calls, [
+    [f.root, '--json', '--target', 'claude', '--check'],
+    [f.root, '--json', '--target', 'codex', '--check']]);
+});
+test('install and uninstall never expand to followers', async t => {
+  for (const operation of ['install', 'uninstall']) {
+    const f = fixture(t); f.pin(); follower(f);
+    const calls = recordCalls(f);
+    assert.equal(await f.run(operation, [f.root, '--target', 'claude']), 0);
+    assert.equal(calls.length, 1, operation);
+  }
+});
+test('a follower without an installed pin is skipped with a notice', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  const codex = resolveTarget({ host: 'codex', scope: 'project', project: f.root, env: f.env });
+  f.pins.delete(JSON.stringify(codex));
+  const calls = recordCalls(f), written = [], write = process.stderr.write;
+  process.stderr.write = chunk => { written.push(String(chunk)); return true; };
+  t.after(() => { process.stderr.write = write; });
+  assert.equal(await f.run('check', [f.root, '--target', 'claude', '--json']), 0);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(written, ['zak kit (codex): follows claude but has no installed pin; skipped\n']);
+});

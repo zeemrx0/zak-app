@@ -104,3 +104,51 @@ test('packaged pins to a remote source keep check and uninstall but require a lo
   assert.equal(JSON.parse(fs.readFileSync(receipt)).source.distribution, 'local');
   assert.equal((await f.command('uninstall')).code, 0); assert.equal(receipts(f).length, 0);
 });
+// Item selection and host links against the real sibling kit. Set ZAK_TARGET_KIT_SOURCE to a z-agent-kit folder
+// whose package.json declares kitSelectionProtocol 1.
+const REAL_KIT = process.env.ZAK_TARGET_KIT_SOURCE;
+function realKitSupportsSelection() {
+  try { return JSON.parse(fs.readFileSync(path.join(REAL_KIT, 'package.json'), 'utf8')).kitSelectionProtocol === 1; } catch { return false; }
+}
+test('packaged item selection, host link and follower update against the real kit', { skip: !REAL_KIT || !realKitSupportsSelection(), timeout: 300000 }, async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-kit-selection-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const home = path.join(root, 'home'), project = path.join(root, 'project');
+  for (const dir of [home, project]) fs.mkdirSync(dir);
+  const build = buildRelease(ROOT, path.join(root, 'release'));
+  const pkg = unpack(fs.readFileSync(path.join(build.out, build.archive)), path.join(root, 'cli'));
+  const cli = path.join(pkg, 'scripts/zak.cjs');
+  const environment = { ...process.env, HOME: home };
+  for (const key of ['XDG_DATA_HOME', 'ZAK_ROOT', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'GH_TOKEN', 'GITHUB_TOKEN']) delete environment[key];
+  const zak = (...args) => runZak(cli, ['kit', ...args], environment, project);
+  const { resolveTarget } = require('../../src/zak/kit-target-locator');
+  const lock = host => JSON.parse(fs.readFileSync(resolveTarget({ host, scope: 'project', project, env: environment }).lockPath, 'utf8'));
+  const reports = output => output.trim().split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  assert.equal((await runZak(cli, ['kit', 'source', REAL_KIT], environment, project)).code, 0);
+
+  const inventory = await zak('inventory', project, '--target', 'claude,codex', '--json');
+  assert.equal(inventory.code, 0, inventory.output);
+  const catalog = JSON.parse(inventory.output);
+  assert.equal(catalog.schema, 1);
+  const ids = catalog.items.map(item => item.id);
+  assert.ok(ids.length >= 2, 'inventory lists items');
+  const [first, second] = ids.filter(id => /\/skills\//.test(id));
+
+  const claude = await zak('install', project, '--target', 'claude', '--select', first, '--json');
+  assert.equal(claude.code, 0, claude.output);
+  const codex = await zak('install', project, '--target', 'codex', '--follow', 'claude', '--json');
+  assert.equal(codex.code, 0, codex.output);
+  assert.equal(lock('codex').follows, 'claude');
+
+  const moved = await zak('update', project, '--target', 'claude', '--select', second, '--json');
+  assert.equal(moved.code, 0, moved.output);
+  assert.deepEqual(lock('claude').selectedResources, [second]);
+  assert.deepEqual(lock('codex').selectedResources, [second]);
+  assert.equal(lock('codex').follows, 'claude');
+  assert.deepEqual(reports(moved.output).map(report => report.target).sort(), ['claude', 'codex']);
+
+  const broken = await zak('update', project, '--target', 'codex', '--select', first, '--json');
+  assert.equal(broken.code, 0, broken.output);
+  assert.equal(lock('codex').follows, undefined);
+  assert.match(broken.output, /no longer follows claude/);
+});

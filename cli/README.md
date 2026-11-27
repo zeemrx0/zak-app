@@ -44,6 +44,29 @@ project or a supplied project path. Do not combine `--global` with a project pat
 Global installations require explicit tier selection.
 
 Add `--dry-run` to preview changes without applying them.
+
+### Choose items and link hosts
+
+```sh
+zak kit inventory --target claude,codex --json
+zak kit install --target claude --select general/skills/z-ste
+zak kit install --target codex --follow claude
+zak kit update --target claude --select general/skills/z-ste,unity/rules/z-unity-core
+zak kit update --target codex --no-follow
+```
+
+- `--select <ids>` installs only the listed items and the items they require. An ID is `tier/kind/name`.
+- `--follow <host>` makes one `--target` host copy the saved selection of the other host. The link is stored in the follower's lock.
+- `--no-follow` removes the link and keeps the installed files.
+- `zak kit update` and `zak kit check` on a source host also run every host whose lock follows it.
+  The followers run after the source with the same selection. Install and uninstall never expand.
+- An explicit `--select` or `--tier` on a follower, without its source in the same run, breaks the link.
+- `zak kit inventory` is read-only. It prints the items, their dependencies and the saved selection of each host as JSON.
+  It reads the local kit folder and writes no pin.
+
+These flags need a kit folder that declares item selection. An older kit folder fails with
+`kit source <tag> does not support item selection; update the kit folder`.
+
 The kit channel follows the version of the local kit folder: a `-beta.N` version is beta, any other release version is stable.
 Kit and CLI channels are independent.
 

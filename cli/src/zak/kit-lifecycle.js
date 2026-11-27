@@ -8,6 +8,8 @@ const { selectInstalledTargets, finishKitSession } = require('./kit-update-picke
 const { compatibleDescriptor, readPin, writePin, removePin, lockSources } = require('./kit-source-pins');
 const { readPreference, describeSource } = require('./kit-source-preference');
 const { localSource } = require('./kit-local-source');
+const { withFollowers } = require('./kit-followers');
+const { assertSelectionProtocol, SELECTION_FLAGS } = require('./kit-inventory');
 const HOSTS = ['codex', 'claude'];
 const KIT_PATH_ERROR = 'set a local kit path: zak kit source <path>';
 const REMOVED_HOSTS = { omp: ['OMP', '.omp/'], pi: ['Pi', '.pi/'] };
@@ -16,7 +18,7 @@ function removedHostError(host) {
   return new Error(`${name} support was removed; supported targets: claude, codex. Remove an existing ${dir} install with an earlier zak/zAgentKit release or delete it manually.`);
 }
 function targetArgs(args) {
-  const result = { hosts: null, scope: 'project', project: process.cwd(), readonly: false, rest: [] };
+  const result = { hosts: null, scope: 'project', project: process.cwd(), readonly: false, selection: false, rest: [] };
   let positional = false;
   for (let i = 0; i < args.length; i++) {
     const value = args[i];
@@ -35,12 +37,19 @@ function targetArgs(args) {
         const tier = args[++i];
         if (!tier || tier.startsWith('--')) throw new Error('missing kit tier value');
         result.rest.push(tier);
-      } else if (!value.startsWith('-')) {
+      } else if (value === '--select' || value === '--follow') {
+        const option = args[++i];
+        if (!option || option.startsWith('--')) throw new Error(`missing kit ${value.slice(2)} value`);
+        if (value === '--follow' && !HOSTS.includes(option)) throw new Error('invalid kit follow host');
+        result.rest.push(option); result.selection = true;
+      } else if (value === '--no-follow') result.selection = true;
+      else if (!value.startsWith('-')) {
         if (positional) throw new Error('only one kit project is allowed');
         positional = true; result.project = path.resolve(value);
       } else if (!['--force', '--json', '--help', '-h'].includes(value)) throw new Error('unknown kit option');
     }
   }
+  if (args.includes('--follow') && result.hosts?.length !== 1) throw new Error('--follow requires exactly one --target host');
   if (result.scope === 'global' && positional) throw new Error('--global cannot be combined with a repository path');
   return result;
 }
@@ -109,8 +118,15 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
         sessionStarted = visual;
       }
     }
-    const descriptors = hosts.map(descriptorFor);
-    const plans = descriptors.map(descriptor => {
+    const notice = message => args.includes('--json') ? process.stderr.write(`${message}\n`) : ui.info(message, { plain: !visual });
+    const entries = [];
+    for (const entry of withFollowers(hosts, descriptorFor, operation)) {
+      const descriptor = descriptorFor(entry.host);
+      if (entry.expanded && !deps.readPin(descriptor, env))
+        notice(`zak kit (${entry.host}): follows ${entry.follow} but has no installed pin; skipped`);
+      else entries.push({ ...entry, descriptor });
+    }
+    const plans = entries.map(({ descriptor, follow }) => {
       const pin = deps.readPin(descriptor, env);
       if (!pin) {
         if (operation !== 'install') throw new Error('no trusted source pin; remove legacy targets with the original installer');
@@ -120,17 +136,20 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
       const exact = !!pin && (pin.state !== 'installed' || operation === 'check' || operation === 'uninstall');
       const localPath = preference?.path || (pin?.source.distribution === 'local' ? pin.source.path : null);
       if (!exact && !localPath) throw new Error(KIT_PATH_ERROR);
-      return { descriptor, pin, exact, source: exact ? pin.source : deps.localSource(localPath) };
+      return { descriptor, pin, exact, follow, source: exact ? pin.source : deps.localSource(localPath) };
     });
     let exitCode = 0;
-    for (const { descriptor, pin, exact, source } of plans) {
+    for (const { descriptor, pin, exact, follow, source } of plans) {
       let handle;
       try {
         handle = exact ? deps.pinnedSnapshot(pin, env) : await deps.kitSnapshot(source, { readonly }, env);
         if (!args.includes('--json')) ui.info(`Kit source (${descriptor.host}): ${describeSource(source)} ${handle.snapshot.tag}`, { plain: !visual });
         const pending = { schema: 1, descriptor, source, snapshot: handle.snapshot, state: 'pending', operation };
-        const forwarded = [...parsed.rest, '--target', descriptor.host,
+        const link = follow && operation === 'update' && !parsed.rest.some(arg => ['--follow', '--no-follow'].includes(arg));
+        const forwarded = [...parsed.rest, ...(link ? ['--follow', follow] : []), '--target', descriptor.host,
           ...operationFlags.filter(flag => !parsed.rest.includes(flag))];
+        if (follow && !args.includes('--json')) ui.info(`zak kit (${descriptor.host}): follows ${follow}`, { plain: !visual });
+        if (forwarded.some(arg => SELECTION_FLAGS.includes(arg))) assertSelectionProtocol(handle.pkg, handle.snapshot.tag);
         sessionStarted = visual;
         const result = await deps.runControlled(handle.pkg, forwarded, { env, descriptor,
           onPrepare(actual) {
@@ -147,8 +166,9 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
         const code = result.code || (!readonly && result.result?.complete === false ? 2 : 0);
         if (code === 1 || exitCode === 1) exitCode = 1;
         else if (code) exitCode = code;
-      } catch {
-        ui.error(`zak kit (${descriptor.host}): source-bound operation failed; retained state must be inspected before retrying`, { plain: !visual });
+      } catch (error) {
+        const message = error.selectionProtocol ? error.message : 'source-bound operation failed; retained state must be inspected before retrying';
+        ui.error(`zak kit (${descriptor.host}): ${message}`, { plain: !visual });
         exitCode = 1;
       } finally { handle?.cleanup(); }
     }
@@ -163,4 +183,4 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
     if (sessionStarted) deps.finishKitSession(sessionExit);
   }
 }
-module.exports = { kitLifecycle, targetArgs };
+module.exports = { kitLifecycle, targetArgs, HOSTS };
