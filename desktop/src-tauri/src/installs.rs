@@ -15,6 +15,10 @@ const LOCK_FILE: &str = "zak-lock.json";
 pub struct Lock {
     pub kit_version: String,
     pub tiers: Vec<String>,
+    /// The lock records an explicit item list. A lock without one records tiers only.
+    pub saved: bool,
+    /// The host this lock copies, when it is linked.
+    pub follows: Option<String>,
     pub lock_path: String,
 }
 
@@ -78,7 +82,9 @@ pub fn read_lock(path: &Path) -> Result<Option<Lock>, String> {
         .and_then(Value::as_array)
         .and_then(|a| a.iter().map(|t| t.as_str().map(str::to_string)).collect::<Option<Vec<_>>>())
         .ok_or_else(|| format!("{}: tiers must be an array of strings", path.display()))?;
-    Ok(Some(Lock { kit_version: kit_version.to_string(), tiers, lock_path: path.to_string_lossy().into_owned() }))
+    let saved = json.get("selectedResources").is_some_and(|v| !v.is_null());
+    let follows = json.get("follows").and_then(Value::as_str).map(str::to_string);
+    Ok(Some(Lock { kit_version: kit_version.to_string(), tiers, saved, follows, lock_path: path.to_string_lossy().into_owned() }))
 }
 
 /// Builds a location from its two lock paths. Both locks are tried so one bad file does not hide the other.
@@ -224,6 +230,14 @@ mod tests {
         assert_eq!(lock.kit_version, "0.7.0");
         assert_eq!(lock.tiers, ["general", "unity"]);
         assert_eq!(lock.lock_path, ok.to_string_lossy());
+        assert!(!lock.saved, "a tiers-only lock has no saved items");
+        assert_eq!(lock.follows, None);
+
+        let saved = dir.join("saved.json");
+        fs::write(&saved, r#"{"kitVersion":"1","tiers":["general"],"selectedResources":["general/skills/z-a"],"follows":"claude"}"#).unwrap();
+        let lock = read_lock(&saved).unwrap().unwrap();
+        assert!(lock.saved);
+        assert_eq!(lock.follows.as_deref(), Some("claude"));
 
         assert_eq!(read_lock(&dir.join("missing.json")).unwrap(), None);
 

@@ -31,18 +31,20 @@
     return out;
   }
 
-  // Item ID -> labels of the checked items that require it. Items nothing requires are absent.
-  function requiredBy(checked, items) {
+  // Item ID -> labels of the items that keep it checked. An item is locked only when the closure of the explicit set
+  // without it still holds it, so a member of a dependency cycle can be unchecked when nothing outside the cycle
+  // needs it. Items nothing keeps are absent.
+  function requiredBy(explicit, items) {
     const out = new Map();
-    for (const item of items) {
-      if (!checked.has(item.id)) continue;
-      for (const need of item.requires || []) {
-        if (need === item.id || !checked.has(need)) continue;
-        if (!out.has(need)) out.set(need, []);
-        out.get(need).push(item.label);
-      }
+    for (const id of closure(explicit, items)) {
+      const rest = new Set(explicit);
+      rest.delete(id);
+      const keep = closure(rest, items);
+      if (!keep.has(id)) continue;
+      const labels = new Set();
+      for (const item of items) if (keep.has(item.id) && item.id !== id && (item.requires || []).includes(id)) labels.add(item.label);
+      out.set(id, [...labels].sort((a, b) => a.localeCompare(b)));
     }
-    for (const labels of out.values()) labels.sort((a, b) => a.localeCompare(b));
     return out;
   }
 
@@ -54,15 +56,12 @@
     return on === ids.length ? "on" : "mixed";
   }
 
-  // The click on a tier or kind node. A fully checked node removes its unlocked IDs from the explicit set. Any
-  // other node adds every unchecked ID. `locked` needs `.has(id)` (a Set or the `requiredBy` map).
-  function toggleNode(explicit, ids, checked, locked) {
+  // The click on a tier or kind node. A fully checked node removes all its IDs from the explicit set, and the
+  // closure keeps whatever a checked item outside the node still needs. Any other node adds every unchecked ID.
+  function toggleNode(explicit, ids, checked) {
     const next = new Set(explicit);
-    if (ids.every((id) => checked.has(id))) {
-      for (const id of ids) if (!locked.has(id)) next.delete(id);
-    } else {
-      for (const id of ids) if (!checked.has(id)) next.add(id);
-    }
+    if (ids.every((id) => checked.has(id))) for (const id of ids) next.delete(id);
+    else for (const id of ids) if (!checked.has(id)) next.add(id);
     return next;
   }
 

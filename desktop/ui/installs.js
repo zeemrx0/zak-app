@@ -106,10 +106,11 @@
   }
 
   const installedHost = (loc, h) => !!loc.hosts[h];
-  // A lock with no saved item list and no link records tiers only. Check and Update keep sending its tiers.
-  function legacyTiers(loc, store, h) {
-    const src = store.inv && !store.inv.error && store.inv.hosts[h];
-    return installedHost(loc, h) && src && src.saved === false && !src.follows ? sorted(loc.hosts[h].tiers) : null;
+  // A lock with no saved item list and no link records tiers only. Check and Update keep sending its tiers. The
+  // decision reads the lock, so it holds when the inventory cannot be read.
+  function legacyTiers(loc, h) {
+    const lock = loc.hosts[h];
+    return lock && lock.saved === false && !lock.follows ? sorted(lock.tiers) : null;
   }
 
   // The checked set this host would have after Apply, and the set its lock records now.
@@ -196,7 +197,10 @@
       job.follow = st.link;
       job.select = select;
     } else if (st.origLink) {
+      // Unlink keeps the files: the host's current items go with the flag, so the kit never falls back to tiers.
       job.noFollow = true;
+      const select = sorted(st.origExplicit);
+      if (select.length) job.select = select;
     } else {
       if (!st.explicit.size) return `${h.label} skipped: no items selected.`;
       job.select = sorted(st.explicit);
@@ -219,7 +223,7 @@
           continue;
         }
         job.action = kind;
-        const tiers = kind === "uninstall" ? null : legacyTiers(loc, store, h.id);
+        const tiers = kind === "uninstall" ? null : legacyTiers(loc, h.id);
         if (tiers) job.tiers = tiers;
       } else {
         if (!store.hs) {
@@ -735,7 +739,7 @@
     function setNode(h, ids) {
       const st = store.hs[h.id];
       const checked = closureOf(store, st.explicit);
-      st.explicit = T.toggleNode(st.explicit, ids, checked, T.requiredBy(checked, itemsOf(store)));
+      st.explicit = T.toggleNode(st.explicit, ids, checked);
       paint(key);
     }
     function setExpanded(h, nodeKey) {
@@ -790,7 +794,7 @@
           hostLabel: h.label,
           tree: treeFor(inv),
           checked,
-          locked: T.requiredBy(checked, inv.items),
+          locked: T.requiredBy(st.explicit, inv.items),
           changed: (id) => checked.has(id) !== before.has(id),
           expanded: { has: (k) => store.expanded.has(`${h.id}|${k}`) },
           disabled: store.busy || unlinking,

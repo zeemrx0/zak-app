@@ -33,18 +33,67 @@ test("closure survives a cycle and drops unknown IDs", () => {
   assert.deepEqual([...closure(new Set(["general/skills/ghost"]), loop)], []);
 });
 
-test("requiredBy lists every checked requirer by label", () => {
-  const checked = closure(new Set(ids("left", "right")), DIAMOND);
-  const map = requiredBy(checked, DIAMOND);
+test("requiredBy lists every requirer that keeps an item checked", () => {
+  const map = requiredBy(new Set(ids("left", "right")), DIAMOND);
   assert.deepEqual(map.get("general/skills/base"), ["left", "right"]);
   assert.equal(map.has("general/skills/left"), false);
 });
 
 test("requiredBy ignores requirers that are not checked", () => {
-  const checked = closure(new Set(ids("left")), DIAMOND);
-  const map = requiredBy(checked, DIAMOND);
+  const map = requiredBy(new Set(ids("left")), DIAMOND);
   assert.deepEqual(map.get("general/skills/base"), ["left"]);
   assert.equal(map.has("general/skills/right"), false);
+});
+
+// The real unity tier: the core rule and the asset conventions rule require each other, and a skill shares a label
+// with a rule. The luna pair has the same shape.
+const unity = (category, label, requires = []) => ({ id: `unity/${category}/${label}`, tier: "unity", category, label, requires });
+const UNITY = [
+  unity("rules", "z-unity-core.md", ["unity/rules/z-unity-asset-conventions.md", "unity/skills/z-unity-asset-conventions"]),
+  unity("rules", "z-unity-asset-conventions.md", ["unity/rules/z-unity-core.md"]),
+  unity("skills", "z-unity-asset-conventions", ["unity/rules/z-unity-asset-conventions.md"]),
+  unity("skills", "z-unity-code-review", ["unity/rules/z-unity-core.md"]),
+];
+const UNITY_IDS = UNITY.map((i) => i.id);
+const CORE = "unity/rules/z-unity-core.md";
+
+test("requiredBy does not lock the item that started a dependency cycle", () => {
+  const map = requiredBy(new Set([CORE]), UNITY);
+  assert.equal(map.has(CORE), false, "nothing outside the cycle needs z-unity-core");
+  assert.deepEqual(map.get("unity/rules/z-unity-asset-conventions.md"), ["z-unity-asset-conventions", "z-unity-core.md"]);
+  assert.deepEqual(map.get("unity/skills/z-unity-asset-conventions"), ["z-unity-core.md"]);
+});
+
+test("requiredBy lists one label per requirer", () => {
+  const map = requiredBy(new Set([CORE]), UNITY);
+  const labels = map.get("unity/rules/z-unity-asset-conventions.md");
+  assert.deepEqual(labels, [...new Set(labels)]);
+});
+
+test("unchecking the unity tier clears a cycle that was checked through one rule", () => {
+  const explicit = new Set([CORE]);
+  const checked = closure(explicit, UNITY);
+  assert.equal(checked.size, 3, "core, asset rule and asset skill; the review skill stays off");
+  const all = toggleNode(explicit, UNITY_IDS, checked);
+  assert.equal(closure(all, UNITY).size, 4, "a partly checked tier checks everything first");
+  const next = toggleNode(all, UNITY_IDS, closure(all, UNITY));
+  assert.equal(next.size, 0);
+  assert.equal(closure(next, UNITY).size, 0, "nothing from unity remains");
+});
+
+test("unchecking the unity tier clears an install whose items are all explicit", () => {
+  const explicit = new Set(UNITY_IDS);
+  const checked = closure(explicit, UNITY);
+  const next = toggleNode(explicit, UNITY_IDS, checked);
+  assert.equal(closure(next, UNITY).size, 0);
+});
+
+test("unchecking a kind keeps what a checked item outside the kind needs", () => {
+  const explicit = new Set([...UNITY_IDS.filter((id) => id.includes("/skills/z-unity-code-review"))]);
+  const checked = closure(explicit, UNITY);
+  const rules = UNITY_IDS.filter((id) => id.includes("/rules/"));
+  const next = toggleNode(explicit, rules, checked);
+  assert.deepEqual([...closure(next, UNITY)].sort(), [...checked].sort(), "the review skill still pulls the rules in");
 });
 
 test("nodeState is on, off or mixed", () => {
@@ -58,24 +107,30 @@ test("nodeState is on, off or mixed", () => {
 test("toggleNode checks every unchecked ID of a partly checked node", () => {
   const explicit = new Set(ids("c"));
   const checked = closure(explicit, CHAIN);
-  const next = toggleNode(explicit, ids("a", "b", "c"), checked, requiredBy(checked, CHAIN));
+  const next = toggleNode(explicit, ids("a", "b", "c"), checked);
   assert.deepEqual([...next].sort(), ids("a", "b", "c"));
   assert.deepEqual([...explicit], ids("c"), "the input set is not changed");
 });
 
-test("toggleNode unchecks a fully checked node but keeps locked items", () => {
+test("toggleNode unchecks a fully checked node and drops its explicit IDs", () => {
   const explicit = new Set(ids("a", "c"));
   const checked = closure(explicit, CHAIN);
-  const locked = requiredBy(checked, CHAIN);
-  const next = toggleNode(explicit, ids("a", "c"), checked, locked);
-  assert.deepEqual([...next], ids("c"), "c is required by b, which a pulled in");
-  assert.deepEqual([...closure(next, CHAIN)].sort(), ids("c"));
+  const next = toggleNode(explicit, ids("a", "c"), checked);
+  assert.equal(next.size, 0);
+});
+
+test("toggleNode keeps an item that a checked item outside the node requires", () => {
+  const explicit = new Set(ids("a", "c"));
+  const checked = closure(explicit, CHAIN);
+  const next = toggleNode(explicit, ids("c"), checked);
+  assert.deepEqual([...next], ids("a"));
+  assert.deepEqual([...closure(next, CHAIN)].sort(), ids("a", "b", "c"));
 });
 
 test("toggleNode clears a whole node whose items lock nothing outside it", () => {
   const explicit = new Set(ids("top"));
   const checked = closure(explicit, DIAMOND);
-  const next = toggleNode(explicit, ids("top", "left", "right", "base"), checked, new Set());
+  const next = toggleNode(explicit, ids("top", "left", "right", "base"), checked);
   assert.equal(next.size, 0);
 });
 
