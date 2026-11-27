@@ -414,13 +414,29 @@ test('--no-follow on a source is not forwarded to the host that follows it', asy
     [f.root, '--no-follow', '--json', '--target', 'claude', '--update', '--force'],
     [f.root, '--json', '--follow', 'claude', '--target', 'codex', '--update', '--force']]);
 });
-test('check on a source also checks its follower without a follow flag', async t => {
+test('check on a source checks a follower of an older kit without a follow flag', async t => {
   const f = fixture(t); f.pin(); follower(f);
   const calls = recordCalls(f);
   assert.equal(await f.run('check', [f.root, '--target', 'claude', '--json']), 0);
   assert.deepEqual(calls, [
     [f.root, '--json', '--target', 'claude', '--check'],
     [f.root, '--json', '--target', 'codex', '--check']]);
+});
+test('check on a source passes --follow to a follower whose kit supports it, also with a tier list', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  f.deps.pinnedSnapshot = () => ({ pkg: selectionPackage(t, 1), snapshot, cleanup() {} });
+  const calls = recordCalls(f);
+  assert.equal(await f.run('check', [f.root, '--target', 'claude', '--tier', 'unity', '--json']), 0);
+  assert.deepEqual(calls, [
+    [f.root, '--tier', 'unity', '--json', '--target', 'claude', '--check'],
+    [f.root, '--tier', 'unity', '--json', '--follow', 'claude', '--target', 'codex', '--check']]);
+});
+test('update with a tier list on a source runs its follower with --follow', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  f.deps.kitSnapshot = () => ({ pkg: selectionPackage(t, 1), snapshot, cleanup() {} });
+  const calls = recordCalls(f);
+  assert.equal(await f.run('update', [f.root, '--target', 'claude', '--tier', 'unity', '--json']), 0);
+  assert.deepEqual(calls[1], [f.root, '--tier', 'unity', '--json', '--follow', 'claude', '--target', 'codex', '--update', '--force']);
 });
 test('install and uninstall never expand to followers', async t => {
   for (const operation of ['install', 'uninstall']) {

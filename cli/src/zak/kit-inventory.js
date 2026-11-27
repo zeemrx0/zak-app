@@ -10,10 +10,11 @@ const KIT_PATH_ERROR = 'set a local kit path: zak kit source <path>';
 const SELECTION_FLAGS = ['--select', '--follow', '--no-follow'];
 const SECRET_KEYS = ['ZAK_KIT_CONTROL', 'GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'];
 // Item selection, follow links and inventory need a kit that declares kitSelectionProtocol 1.
+function supportsSelection(pkg) {
+  try { return JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8'))?.kitSelectionProtocol === 1; } catch { return false; }
+}
 function assertSelectionProtocol(pkg, tag) {
-  let metadata;
-  try { metadata = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8')); } catch { metadata = null; }
-  if (metadata?.kitSelectionProtocol !== 1) {
+  if (!supportsSelection(pkg)) {
     const error = new Error(`kit source ${tag} does not support item selection; update the kit folder`);
     error.selectionProtocol = true;
     throw error;
@@ -48,4 +49,4 @@ async function kitInventory(args, environment = process.env, dependencies = {}) 
     return result.status ?? 1;
   } finally { handle.cleanup(); }
 }
-module.exports = { kitInventory, assertSelectionProtocol, SELECTION_FLAGS };
+module.exports = { kitInventory, assertSelectionProtocol, supportsSelection, SELECTION_FLAGS };

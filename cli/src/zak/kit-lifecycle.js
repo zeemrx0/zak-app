@@ -9,7 +9,7 @@ const { compatibleDescriptor, readPin, writePin, removePin, lockSources } = requ
 const { readPreference, describeSource } = require('./kit-source-preference');
 const { localSource } = require('./kit-local-source');
 const { withFollowers } = require('./kit-followers');
-const { assertSelectionProtocol, SELECTION_FLAGS } = require('./kit-inventory');
+const { assertSelectionProtocol, supportsSelection, SELECTION_FLAGS } = require('./kit-inventory');
 const HOSTS = ['codex', 'claude'];
 const KIT_PATH_ERROR = 'set a local kit path: zak kit source <path>';
 const REMOVED_HOSTS = { omp: ['OMP', '.omp/'], pi: ['Pi', '.pi/'] };
@@ -147,7 +147,10 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
         const pending = { schema: 1, descriptor, source, snapshot: handle.snapshot, state: 'pending', operation };
         // --no-follow names the --target hosts only; a host added because it follows one of them keeps its link.
         const rest = expanded ? parsed.rest.filter(arg => arg !== '--no-follow') : parsed.rest;
-        const link = follow && operation === 'update' && !rest.some(arg => ['--follow', '--no-follow'].includes(arg));
+        // A follower copies its source on update. On check it does too when its kit knows the flag, so an explicit tier
+        // list on the source does not read as a link break. An older kit keeps today's check.
+        const link = follow && !rest.some(arg => ['--follow', '--no-follow'].includes(arg)) &&
+          (operation === 'update' || (operation === 'check' && supportsSelection(handle.pkg)));
         const forwarded = [...rest, ...(link ? ['--follow', follow] : []), '--target', descriptor.host,
           ...operationFlags.filter(flag => !rest.includes(flag))];
         if (follow && !args.includes('--json')) ui.info(`zak kit (${descriptor.host}): follows ${follow}`, { plain: !visual });
