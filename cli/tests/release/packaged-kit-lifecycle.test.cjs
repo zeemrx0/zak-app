@@ -123,7 +123,19 @@ test('packaged item selection, host link and follower update against the real ki
   const zak = (...args) => runZak(cli, ['kit', ...args], environment, project);
   const { resolveTarget } = require('../../src/zak/kit-target-locator');
   const lock = host => JSON.parse(fs.readFileSync(resolveTarget({ host, scope: 'project', project, env: environment }).lockPath, 'utf8'));
-  const reports = output => output.trim().split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line));
+  // Each host prints one pretty-printed JSON object; split the stream at the top-level closing braces.
+  const reports = output => {
+    const out = [];
+    let depth = 0, start = -1, quoted = false, escaped = false;
+    for (let i = 0; i < output.length; i++) {
+      const c = output[i];
+      if (quoted) { if (escaped) escaped = false; else if (c === '\\') escaped = true; else if (c === '"') quoted = false; continue; }
+      if (c === '"') quoted = true;
+      else if (c === '{') { if (depth++ === 0) start = i; }
+      else if (c === '}' && --depth === 0) out.push(JSON.parse(output.slice(start, i + 1)));
+    }
+    return out;
+  };
   assert.equal((await runZak(cli, ['kit', 'source', REAL_KIT], environment, project)).code, 0);
 
   const inventory = await zak('inventory', project, '--target', 'claude,codex', '--json');
