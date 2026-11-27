@@ -38,23 +38,24 @@ process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:0,complete:t
       return { pkg: folder, snapshot, cleanup() {} };
     }
     const predecessor = pkg('old-package', old), current = pkg('new-package', descriptor);
-    const config = { schema: 2, publicRepository: source.repository, variableRepository: 'fixture/cli', privateVariable: 'ZAK_PRIVATE_REPO_URL' };
+    const local = { repository: 'fixture/old-kit', transport: 'local', channel: 'stable', distribution: 'local', path: '/kit' };
     const deps = { runControlled, pinnedSnapshot: () => predecessor, kitSnapshot: () => current,
-      refreshPinnedSource: value => ({ ...value, repository: 'fixture/renamed-private-kit' }), discoverSource() { throw Error('must not rediscover'); } };
+      readPreference: () => ({ schema: 1, kind: 'local', path: '/kit' }), localSource: () => local };
     const args = [...(scope === 'global' ? ['--global'] : [root]), '--target', host];
     const before = fs.readFileSync(path.join(stateRoot(env), fs.readdirSync(stateRoot(env))[0]));
-    assert.equal(await kitLifecycle('check', {}, args, config, env, deps), 0);
+    assert.equal(await kitLifecycle('check', args, env, deps), 0);
     assert.deepEqual(fs.readFileSync(path.join(stateRoot(env), fs.readdirSync(stateRoot(env))[0])), before);
-    assert.equal(await kitLifecycle('update', {}, args, config, env, deps), 0);
+    assert.equal(await kitLifecycle('update', args, env, deps), 0);
     assert.deepEqual(readPin(descriptor, env).descriptor, descriptor);
-    assert.equal(readPin(descriptor, env).source.repository, 'fixture/renamed-private-kit');
+    assert.equal(readPin(descriptor, env).source.distribution, 'local');
+    assert.equal(readPin(descriptor, env).source.path, '/kit');
     assert.equal(fs.existsSync(old.lockPath), false);
     deps.pinnedSnapshot = () => current;
-    assert.equal(await kitLifecycle('uninstall', {}, args, config, env, deps), 0);
+    assert.equal(await kitLifecycle('uninstall', args, env, deps), 0);
     assert.equal(readPin(descriptor, env), null);
     // Uninstall also works directly through the source-pinned predecessor.
     writePin(pin, env); fs.writeFileSync(old.lockPath, 'owned'); deps.pinnedSnapshot = () => predecessor;
-    assert.equal(await kitLifecycle('uninstall', {}, args, config, env, deps), 0);
+    assert.equal(await kitLifecycle('uninstall', args, env, deps), 0);
     assert.equal(readPin(descriptor, env), null);
   });
 }

@@ -33,9 +33,7 @@ jobs:
               !(r.STABLE.test(p.version) || r.BETA.test(p.version)))
             process.exit(1);
           NODE
-      - name: Build configured CLI
-        env:
-          ZAK_PUBLIC_REPO: ${{ vars.ZAK_PUBLIC_REPO }}
+      - name: Build CLI
         working-directory: cli
         run: npm run build
       - name: Publish verified assets

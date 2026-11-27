@@ -50,11 +50,10 @@ test('update alias preserves kit update dispatch, validation, help, and exit cod
   require.cache[cliPath] = original;
   stub.mock.restore();
   const root = path.resolve(__dirname, '../..');
-  const config = require(path.join(root, 'package.json')).kitSourceConfig;
   for (const options of [
     [],
     ['/project with spaces', '--target', 'claude,codex', '--tier', 'general', '--json', '--force', '--dry-run'],
-    ['--global', '--target', 'codex', '--tier', 'general', '--channel', 'beta', '--transport', 'gh'],
+    ['--global', '--target', 'codex', '--tier', 'general'],
   ]) {
     const argv = ['update', ...options];
     assert.equal(await main(argv, root), 7);
@@ -63,17 +62,13 @@ test('update alias preserves kit update dispatch, validation, help, and exit cod
     const alias = calls.at(-2), canonical = calls.at(-1);
     assert.deepEqual(alias, canonical);
     assert.equal(alias[0], 'update');
-    assert.deepEqual(alias[1], options.includes('--channel') ? { channel: 'beta', transport: 'gh' } : {});
-    assert.deepEqual(alias[2], options.filter((arg, i) => !['--channel', '--transport'].includes(arg) && !['--channel', '--transport'].includes(options[i - 1])));
-    assert.equal(alias[3], config);
+    assert.deepEqual(alias[1], options);
+    assert.equal(alias.length, 2);
   }
   const dispatched = calls.length;
   for (const prefix of [['update'], ['kit', 'update']]) {
     for (const flag of ['--update', '--check', '--uninstall', '--cli'])
       await assert.rejects(main([...prefix, flag], root), /subcommand/);
-    await assert.rejects(main([...prefix, '--repo', 'owner/kit'], root), /no longer supported/);
-    await assert.rejects(main([...prefix, '--channel', 'invalid'], root), /invalid kit channel/);
-    await assert.rejects(main([...prefix, '--transport', 'ssh'], root), /invalid kit transport/);
     const log = t.mock.method(console, 'log', () => {});
     assert.equal(await main([...prefix, '--help'], root), 0);
     assert.equal(log.mock.calls[0].arguments[0], HELP);
@@ -81,6 +76,8 @@ test('update alias preserves kit update dispatch, validation, help, and exit cod
   }
   assert.equal(calls.length, dispatched);
   assert.match(HELP, /zak update \[options\]/);
+  assert.match(HELP, /zak kit source \[<path>\]/);
+  assert.doesNotMatch(HELP, /public|private|--transport/);
 });
 test('CLI install is byte-idempotent and self-uninstall leaves kit files', t => {
   const f = fixture(t), result = f.install();

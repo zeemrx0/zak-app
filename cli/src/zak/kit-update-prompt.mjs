@@ -1,12 +1,7 @@
 import { checkboxList } from './ui/checkbox-list.js';
-import { select, text, isCancel } from '@clack/prompts';
+import { text, isCancel } from '@clack/prompts';
 import { outro, HOST_LABELS } from './ui/terminal-ui.mjs';
 export { finishSession as finishKitSession, reportMessage } from './ui/terminal-ui.mjs';
-export async function selectKitSource({ options, initialValue, current, input = process.stdin, output = process.stdout }) {
-  const choice = await select({ message: `Select the kit source (current: ${current})`, options, initialValue, input, output });
-  if (isCancel(choice)) { outro('Source selection cancelled; nothing changed.', { output }); return null; }
-  return choice;
-}
 export async function promptKitPath({ initialValue, validate, input = process.stdin, output = process.stdout }) {
   const value = await text({ message: 'Path to the local z-agent-kit folder', initialValue, placeholder: './z-agent-kit', validate, input, output });
   if (isCancel(value)) { outro('Source selection cancelled; nothing changed.', { output }); return null; }

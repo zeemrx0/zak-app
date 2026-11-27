@@ -2,17 +2,14 @@ const fs = require('node:fs');
 const ui = require('./cli-ui');
 const path = require('node:path');
 const { resolveTarget } = require('./kit-target-locator');
-const { discoverSource } = require('./github-discovery');
-const { validateConfig } = require('./kit-source-config');
 const { kitSnapshot, pinnedSnapshot } = require('./kit-snapshot');
 const { runControlled } = require('./kit-control-runner');
 const { selectInstalledTargets, finishKitSession } = require('./kit-update-picker');
-const { refreshPinnedSource } = require('./pinned-source-refresh');
-const { withGithubAccountsAsync } = require('./github-accounts');
 const { compatibleDescriptor, readPin, writePin, removePin, lockSources } = require('./kit-source-pins');
-const { readPreference, preferredSource, describeSource } = require('./kit-source-preference');
+const { readPreference, describeSource } = require('./kit-source-preference');
 const { localSource } = require('./kit-local-source');
 const HOSTS = ['codex', 'claude'];
+const KIT_PATH_ERROR = 'set a local kit path: zak kit source <path>';
 const REMOVED_HOSTS = { omp: ['OMP', '.omp/'], pi: ['Pi', '.pi/'] };
 function removedHostError(host) {
   const [name, dir] = REMOVED_HOSTS[host];
@@ -47,12 +44,6 @@ function targetArgs(args) {
   if (result.scope === 'global' && positional) throw new Error('--global cannot be combined with a repository path');
   return result;
 }
-function compatible(source, options, operation) {
-  if (options.transport && options.transport !== source.transport) throw new Error('transport conflicts with pinned source');
-  if (options.channel && options.channel !== source.channel && operation !== 'update')
-    throw new Error('channel changes require an explicit update');
-  return { ...source, channel: options.channel || source.channel };
-}
 // Uninstall removes owned files, not their parent directories. Empty trees do
 // not establish ownership; files, links, and uninspectable trees still do.
 function legacyContent(file, budget = { remaining: 4096 }, depth = 0) {
@@ -81,10 +72,10 @@ function legacy(descriptor) {
   }
   if (evidence) throw new Error('untrusted legacy target; remove it with its original installer, review retained edits, then reinstall');
 }
-async function kitLifecycle(operation, options, args, config, env = process.env, dependencies = {}) {
+async function kitLifecycle(operation, args, env = process.env, dependencies = {}) {
   if (!['install', 'update', 'check', 'uninstall'].includes(operation)) throw new Error('invalid kit lifecycle operation');
-  const deps = { resolveTarget, discoverSource, kitSnapshot, pinnedSnapshot, runControlled,
-    readPin, writePin, removePin, lockSources, refreshPinnedSource, withGithubAccountsAsync, selectInstalledTargets, finishKitSession,
+  const deps = { resolveTarget, kitSnapshot, pinnedSnapshot, runControlled,
+    readPin, writePin, removePin, lockSources, selectInstalledTargets, finishKitSession,
     readPreference, localSource, ...dependencies };
   const preference = deps.readPreference(env);
   const parsed = targetArgs(args), readonly = parsed.readonly || operation === 'check';
@@ -124,44 +115,18 @@ async function kitLifecycle(operation, options, args, config, env = process.env,
       if (!pin) {
         if (operation !== 'install') throw new Error('no trusted source pin; remove legacy targets with the original installer');
         legacy(descriptor);
-      } else {
-        if (!preference || pin.state !== 'installed' || operation !== 'update') compatible(pin.source, options, operation);
-        if (pin.state !== 'installed' && operation !== 'uninstall' && pin.operation !== operation)
-          throw new Error('pending source operation must be resumed or uninstalled');
-        if (pin.state !== 'installed' && options.channel && options.channel !== pin.source.channel)
-          throw new Error('pending source channel cannot change');
-      }
-      return { descriptor, pin };
+      } else if (pin.state !== 'installed' && operation !== 'uninstall' && pin.operation !== operation)
+        throw new Error('pending source operation must be resumed or uninstalled');
+      const exact = !!pin && (pin.state !== 'installed' || operation === 'check' || operation === 'uninstall');
+      const localPath = preference?.path || (pin?.source.distribution === 'local' ? pin.source.path : null);
+      if (!exact && !localPath) throw new Error(KIT_PATH_ERROR);
+      return { descriptor, pin, exact, source: exact ? pin.source : deps.localSource(localPath) };
     });
     let exitCode = 0;
-    for (const { descriptor, pin } of plans) {
+    for (const { descriptor, pin, exact, source } of plans) {
       let handle;
       try {
-        let source;
-        const exact = pin && (pin.state !== 'installed' || operation === 'check' || operation === 'uninstall' || operation === 'install');
-        if (exact) {
-          source = compatible(pin.source, options, operation);
-          handle = deps.pinnedSnapshot(pin, env);
-        } else {
-          handle = await deps.withGithubAccountsAsync(async (accountEnv, run) => {
-            let downloadEnv = accountEnv;
-            const auth = { env: accountEnv, run, tryAccounts: false,
-              onAuthenticated(selected) { downloadEnv = selected; } };
-            if (preference) source = preferredSource(preference, config,
-              { transport: options.transport, channel: options.channel, pinnedChannel: pin?.source.channel },
-              (settled, channel) => deps.discoverSource(settled, { ...auth, channel }));
-            else if (pin?.source.distribution === 'local') {
-              if (options.transport) throw new Error('--transport does not apply to a local kit source');
-              source = deps.localSource(pin.source.path, options.channel);
-            } else if (pin) source = deps.refreshPinnedSource(compatible(pin.source, options, operation), auth);
-            else {
-              source = deps.discoverSource(validateConfig(config), { ...auth, channel: options.channel || 'stable' });
-              if (options.transport === 'curl' && source.distribution === 'private') throw new Error('private kit requires authenticated transport');
-              source = { ...source, transport: options.transport || source.transport };
-            }
-            return deps.kitSnapshot(source, { readonly }, downloadEnv);
-          }, { env });
-        }
+        handle = exact ? deps.pinnedSnapshot(pin, env) : await deps.kitSnapshot(source, { readonly }, env);
         if (!args.includes('--json')) ui.info(`Kit source (${descriptor.host}): ${describeSource(source)} ${handle.snapshot.tag}`, { plain: !visual });
         const pending = { schema: 1, descriptor, source, snapshot: handle.snapshot, state: 'pending', operation };
         const forwarded = [...parsed.rest, '--target', descriptor.host,
@@ -198,4 +163,4 @@ async function kitLifecycle(operation, options, args, config, env = process.env,
     if (sessionStarted) deps.finishKitSession(sessionExit);
   }
 }
-module.exports = { kitLifecycle, targetArgs, compatible };
+module.exports = { kitLifecycle, targetArgs };

@@ -5,8 +5,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { kitLifecycle } = require('../../src/zak/kit-lifecycle');
 const source = { repository: 'fixture/kit', distribution: 'public', transport: 'curl', channel: 'stable' };
-const config = { schema: 2, publicRepository: source.repository, variableRepository: 'fixture/cli', privateVariable: 'ZAK_PRIVATE_REPO_URL' };
-test('public multi-host lifecycle closes only after every controlled child', async t => {
+const local = { repository: 'fixture/kit', distribution: 'local', transport: 'local', channel: 'stable', path: '/kit' };
+test('multi-host lifecycle closes only after every controlled child', async t => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-session-')));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const previous = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
@@ -14,7 +14,8 @@ test('public multi-host lifecycle closes only after every controlled child', asy
   t.after(() => previous ? Object.defineProperty(process.stdout, 'isTTY', previous) : delete process.stdout.isTTY);
   const events = [];
   const dependencies = {
-    readPin: () => null, writePin: () => {}, lockSources: () => () => {}, discoverSource: () => source,
+    readPin: () => null, writePin: () => {}, lockSources: () => () => {},
+    readPreference: () => ({ schema: 1, kind: 'local', path: '/kit' }), localSource: () => local,
     kitSnapshot: async () => ({ pkg: '/fixture', snapshot: {}, cleanup() {} }),
     async runControlled(_pkg, _args, callbacks) {
       events.push(callbacks.descriptor.host);
@@ -24,10 +25,10 @@ test('public multi-host lifecycle closes only after every controlled child', asy
     },
     finishKitSession: code => events.push(['end', code]),
   };
-  assert.equal(await kitLifecycle('install', {}, [home, '--target', 'codex,claude'], config, { HOME: home }, dependencies), 0);
+  assert.equal(await kitLifecycle('install', [home, '--target', 'codex,claude'], { HOME: home }, dependencies), 0);
   assert.deepEqual(events, ['codex', 'claude', ['end', 0]]);
 });
-test('interactive source conflict reports its diagnostic before closing', async t => {
+test('interactive missing local path reports its diagnostic before closing', async t => {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-session-error-')));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   for (const stream of [process.stdin, process.stdout]) {
@@ -39,11 +40,11 @@ test('interactive source conflict reports its diagnostic before closing', async 
   t.mock.method(console, 'error', message => events.push(message));
   const dependencies = {
     readPin: descriptor => ({ descriptor, source, state: 'installed', snapshot: {} }),
-    pinnedSnapshot: () => ({ pkg: '/fixture', cleanup() {} }),
+    readPreference: () => null,
     selectInstalledTargets: async () => { events.push('select'); return { code: 0, targets: ['codex'] }; },
-    runControlled: async () => { throw Error('source conflict must stop before apply'); },
+    runControlled: async () => { throw Error('a missing local path must stop before apply'); },
     finishKitSession: code => events.push(['end', code]),
   };
-  assert.equal(await kitLifecycle('check', { transport: 'gh' }, [home], config, { HOME: home }, dependencies), 1);
-  assert.deepEqual(events, ['select', 'zak: transport conflicts with pinned source', ['end', 1]]);
+  assert.equal(await kitLifecycle('install', [home], { HOME: home }, dependencies), 1);
+  assert.deepEqual(events, ['select', 'zak: set a local kit path: zak kit source <path>', ['end', 1]]);
 });

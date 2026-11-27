@@ -9,35 +9,19 @@ const HELP = `zak — independent CLI and kit management
   zak self-uninstall
   zak update [options] (alias for zak kit update)
   zak kit install|update|check|uninstall [options]
-  zak kit source [public | private | local <path>] (no argument: interactive picker)
+  zak kit source [<path>] (no argument: show the path, or prompt in a terminal)
 
-Kit source: the source selected with 'zak kit source' applies to new installs and updates.
-Without a selection: authorized GitHub discovery; existing targets retain their source.
-A local source packs the folder with npm pack, then installs it like a release.
-Options: --transport curl|gh, --channel stable|beta
-Private sources require authenticated gh transport. CLI releases contain no kits.
+Kit source: a local z-agent-kit folder set with 'zak kit source <path>'. Clone z-agent-kit yourself.
+Install and update pack that folder with npm pack, then install it like a release. The channel follows its version.
+Check and uninstall use the kit snapshot pinned at install time.
 Kit options: [project] --target codex,claude --tier <tiers> --global (-g) --json
-self-update never changes installed kits; self-uninstall leaves kits and cache.
-Kit install/update retrieves verified releases independently of the CLI version.`;
+self-update never changes installed kits; self-uninstall leaves kits and cache.`;
 function kitArgs(operation, args) {
   const mode = { install: [], update: ['--update'], check: ['--check'], uninstall: ['--uninstall'] }[operation];
   if (!mode) throw new Error('expected zak kit install|update|check|uninstall');
   if (args.some(arg => ['--update', '--check', '--uninstall', '--cli'].includes(arg)))
     throw new Error('use the kit subcommand, not a lifecycle/bootstrap flag');
   return [...args, ...mode];
-}
-function sourceArgs(args) {
-  const source = {}, rest = [], seen = new Set();
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--repo' || args[i].startsWith('--repo=')) throw new Error('--repo is no longer supported; kit sources are discovered automatically');
-    const key = { '--channel': 'channel', '--transport': 'transport' }[args[i]];
-    if (!key) { rest.push(args[i]); continue; }
-    if (seen.has(key) || !args[i + 1] || args[i + 1].startsWith('--')) throw new Error(`invalid or repeated ${args[i]}`);
-    seen.add(key); source[key] = args[++i];
-  }
-  if (source.channel && !['stable', 'beta'].includes(source.channel)) throw new Error('invalid kit channel');
-  if (source.transport && !['curl', 'gh'].includes(source.transport)) throw new Error('invalid kit transport');
-  return { source, rest };
 }
 async function main(argv, root = path.resolve(__dirname, '../..')) {
   assertNode();
@@ -52,12 +36,10 @@ async function main(argv, root = path.resolve(__dirname, '../..')) {
   if (!operation || operation === '--help') { console.log(HELP); return 0; }
   if (operation === 'source') {
     if (options.includes('--help') || options.includes('-h')) { console.log(HELP); return 0; }
-    return kitSourceCommand(options, require(path.join(root, 'package.json')).kitSourceConfig);
+    return kitSourceCommand(options);
   }
-  const { source, rest } = sourceArgs(options);
-  kitArgs(operation, rest);
-  if (rest.includes('--help') || rest.includes('-h')) { console.log(HELP); return 0; }
-  const metadata = require(path.join(root, 'package.json'));
-  return kitLifecycle(operation, source, rest, metadata.kitSourceConfig);
+  kitArgs(operation, options);
+  if (options.includes('--help') || options.includes('-h')) { console.log(HELP); return 0; }
+  return kitLifecycle(operation, options);
 }
-module.exports = { main, kitArgs, sourceArgs, HELP };
+module.exports = { main, kitArgs, HELP };

@@ -81,7 +81,7 @@ function priorReceipt(descriptor, env) {
 function writePin(value, env = process.env) {
   validatePin(value, value.descriptor);
   const prior = priorReceipt(value.descriptor, env);
-  if (prior && !sameSourceIdentity(prior.value.source, value.source))
+  if (prior && value.source.distribution !== 'local' && !sameSourceIdentity(prior.value.source, value.source))
     throw new Error('conflicting legacy source identity');
   writePrivate(path.join(stateRoot(env, true), pinKey(value.descriptor) + '.json'), value);
   if (prior) fs.unlinkSync(prior.file);

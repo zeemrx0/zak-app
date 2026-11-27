@@ -15,18 +15,16 @@ test(`zak force policy restores and removes edited ${host} ${scope} files`, { sk
   const env = { ...process.env, HOME: home };
   for (const key of ['XDG_DATA_HOME', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR']) delete env[key];
   const descriptor = resolveTarget({ host, scope, project, env });
-  const source = { repository: 'fixture/kit', distribution: 'public', transport: 'curl', channel: 'stable' };
+  const source = { repository: 'fixture/kit', distribution: 'local', transport: 'local', channel: 'stable', path: KIT };
   const handle = { pkg: KIT, snapshot: { id: 'a'.repeat(64), tag: 'v1.0.0', files: {} }, cleanup() {} };
   let pin;
   const deps = {
     readPin: () => pin, writePin: value => { pin = value; }, removePin: () => { pin = undefined; },
-    lockSources: () => () => {}, discoverSource: () => source, refreshPinnedSource: () => source,
+    lockSources: () => () => {}, readPreference: () => ({ schema: 1, kind: 'local', path: KIT }), localSource: () => source,
     kitSnapshot: () => handle, pinnedSnapshot: () => handle,
-    withGithubAccountsAsync: callback => callback(env),
   };
   const args = [scope === 'global' ? '-g' : project, '--target', host, '--tier', 'general', '--json'];
-  const config = { schema: 2, publicRepository: 'fixture/kit', variableRepository: 'fixture/cli', privateVariable: 'ZAK_PRIVATE_REPO_URL' };
-  const run = (operation, extra = []) => kitLifecycle(operation, {}, [...args, ...extra], config, env, deps);
+  const run = (operation, extra = []) => kitLifecycle(operation, [...args, ...extra], env, deps);
   assert.equal(await run('install'), 0);
   const file = path.join(descriptor.skillsRoot, 'z-codebase-memory', 'SKILL.md');
   const original = fs.readFileSync(file);

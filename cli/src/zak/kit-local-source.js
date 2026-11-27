@@ -17,12 +17,11 @@ function readKit(dir) {
     throw new Error(`not a z-agent-kit checkout: ${real}`);
   return { root: real, metadata };
 }
-function localSource(dir, channel) {
+function localSource(dir) {
   const { root, metadata } = readKit(dir);
   const version = String(metadata.version);
   const derived = STABLE.test(version) ? 'stable' : BETA.test(version) ? 'beta' : null;
   if (!derived) throw new Error(`local kit version ${version} is not a release version`);
-  if (channel && channel !== derived) throw new Error(`local kit version ${version} is not a ${channel} version`);
   return { repository: releaseRepository(metadata), transport: 'local', channel: derived, distribution: 'local', path: root };
 }
 function run(command, args, cwd) {

@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { selectRelease, downloadAsset, validateSource } = require('../release/release-download');
+const { validateSource } = require('../release/release-download');
 const { releaseRepository } = require('../release/release-metadata');
 const { unpack } = require('../release/archive-package');
 const { hash, files, safeParents } = require('./cli-safety');
@@ -48,15 +48,7 @@ async function kitPackage(source, refresh, env = process.env, options = {}) {
     const cached = load(root, source);
     if (cached) return options.envelope ? envelope(cached, readPrivate(path.join(root, 'cache.json'))) : cached;
   }
-  let bytes, tag;
-  if (source.transport === 'local') {
-    const packed = packLocal(source);
-    bytes = packed.bytes; tag = packed.tag;
-  } else {
-    const release = await selectRelease(source, env);
-    bytes = await downloadAsset(source, release, `z-agent-kit-${release.tag_name}.tgz`, env);
-    tag = release.tag_name;
-  }
+  const { bytes, tag } = packLocal(source);
   const id = hash(bytes);
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'zak-kit-'));
   let retained = false;
@@ -67,7 +59,6 @@ async function kitPackage(source, refresh, env = process.env, options = {}) {
     catch (cause) { throw new Error('invalid kit metadata', { cause }); }
     if (metadata.name !== 'z-agent-kit' || `v${metadata.version}` !== tag || releaseRepository(metadata) !== source.repository ||
         !fs.existsSync(path.join(pkg, 'scripts/ship-kit.cjs'))) throw new Error('kit archive identity or entry point mismatch');
-    if (metadata.private === true && !['gh', 'local'].includes(source.transport)) throw new Error('private kit requires authenticated gh transport');
     const inventory = files(pkg);
     const receipt = { ...source, id, tag, files: inventory };
     if (options.envelope) envelope(pkg, receipt);

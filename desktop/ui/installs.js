@@ -13,7 +13,6 @@
 
   const stores = new Map(); // location key -> { base, want, states, busy, notes, results }
   const checkedOnce = new Set();
-  let channel = null; // null (default) | "stable" | "beta"
   let view = null; // refs of the page currently on screen
 
   const HELP_GLOBAL = "Switch a tier on to install it on that agent, or off to uninstall it. Nothing changes until you apply, and the plan lists every file first. An agent's first tier brings general with it.";
@@ -106,7 +105,6 @@
       no_tiers: noTiers,
       scope: loc.path == null ? { kind: "global" } : { kind: "project", path: loc.path },
       dry_run: dry,
-      channel: action === "install" || action === "update" ? channel : null,
     };
   }
   const runKit = (loc, target, action, dry) => invoke("kit_run", { request: request(loc, target.host.id, target.tiers, target.noTiers, target.action || action, dry) });
@@ -628,10 +626,6 @@
     zak.attachMenu(moreBtn, () => [
       { label: "Install…", onSelect: () => openPlan("install", key) },
       { label: "Uninstall…", onSelect: () => openPlan("uninstall", key), danger: true },
-      { separator: true },
-      { label: "Default channel", checked: channel === null, onSelect: () => (channel = null) },
-      { label: "Stable channel", checked: channel === "stable", onSelect: () => (channel = "stable") },
-      { label: "Beta channel", checked: channel === "beta", onSelect: () => (channel = "beta") },
       ...(loc.path != null ? [{ separator: true }, { label: "Remove from List…", onSelect: () => removeProject(loc) }] : []),
     ]);
 

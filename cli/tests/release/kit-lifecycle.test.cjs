@@ -4,11 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { kitLifecycle, targetArgs } = require('../../src/zak/kit-lifecycle');
-const { sourceArgs } = require('../../src/zak/zak-cli');
 const { resolveTarget } = require('../../src/zak/kit-target-locator');
 const source = { repository: 'fixture/public-kit', transport: 'curl', channel: 'stable', distribution: 'public' };
 const snapshot = { id: 'a'.repeat(64), tag: 'v1.0.0', files: {} };
-const config = { schema: 2, publicRepository: source.repository, variableRepository: 'fixture/cli', privateVariable: 'ZAK_PRIVATE_REPO_URL' };
+const localKit = { repository: 'fixture/public-kit', transport: 'local', channel: 'stable', distribution: 'local', path: '/kit' };
+const KIT_PATH_ERROR = { message: 'set a local kit path: zak kit source <path>' };
 function fixture(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-lifecycle-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -17,11 +17,13 @@ function fixture(t) {
   const descriptor = resolveTarget({ host: 'claude', scope: 'project', project: root, env });
   const handle = { pkg: '/fixture', snapshot, cleanup() { events.push('cleanup'); } };
   const deps = {
+    preference: { schema: 1, kind: 'local', path: '/kit' },
     readPin(d) { return pins.get(key(d)) || null; },
     writePin(pin) { pins.set(key(pin.descriptor), pin); events.push(pin.state); },
     removePin(d) { pins.delete(key(d)); events.push('removed'); },
     lockSources() { events.push('lock'); return () => events.push('unlock'); },
-    discoverSource() { events.push('discovery'); return source; },
+    readPreference() { return deps.preference; },
+    localSource() { events.push('local'); return localKit; },
     kitSnapshot() { events.push('download'); return handle; },
     pinnedSnapshot() { events.push('exact'); return handle; },
     async runControlled(pkg, args, callbacks) {
@@ -32,64 +34,15 @@ function fixture(t) {
   };
   function pin(overrides = {}) { pins.set(key(descriptor), { schema: 1, descriptor, source, snapshot,
     state: 'installed', operation: 'install', ...overrides }); }
-  function run(operation, options = {}, args = [root, '--target', 'claude']) {
-    return kitLifecycle(operation, options, args, config, env, deps);
+  function run(operation, args = [root, '--target', 'claude']) {
+    return kitLifecycle(operation, args, env, deps);
   }
   return { root, env, descriptor, pins, events, deps, pin, run };
 }
-test('selected credentials reach downloads but not installer children or receipts', async t => {
-  for (const operation of ['install', 'update']) {
-    const f = fixture(t), privateSource = { ...source, distribution: 'private', transport: 'gh', repositoryId: 42, ownerId: 7 };
-    if (operation === 'update') f.pin({ source: privateSource });
-    const resolve = (_input, options) => {
-      options.onAuthenticated({ ...options.env, GH_TOKEN: 'scoped-canary' });
-      return privateSource;
-    };
-    f.deps.discoverSource = resolve; f.deps.refreshPinnedSource = resolve;
-    const normalSnapshot = f.deps.kitSnapshot, normalRun = f.deps.runControlled;
-    f.deps.kitSnapshot = (candidate, options, env) => {
-      assert.equal(env.GH_TOKEN, 'scoped-canary'); return normalSnapshot();
-    };
-    f.deps.runControlled = (pkg, args, callbacks) => {
-      assert.equal(callbacks.env.GH_TOKEN, undefined); return normalRun(pkg, args, callbacks);
-    };
-    assert.equal(await f.run(operation), 0);
-    assert.equal(f.env.GH_TOKEN, undefined);
-    assert.ok(!JSON.stringify([...f.pins.values()]).includes('scoped-canary'));
-  }
-});
-test('release access failures try another account before installer mutation', async t => {
-  const { withGithubAccountsAsync } = require('../../src/zak/github-accounts');
-  for (const operation of ['install', 'update']) {
-    const f = fixture(t), privateSource = { ...source, transport: 'gh', distribution: 'private', repositoryId: 42, ownerId: 7 };
-    if (operation === 'update') f.pin({ source: privateSource });
-    let resolutions = 0, downloads = 0, mutations = 0;
-    f.deps.discoverSource = f.deps.refreshPinnedSource = () => { resolutions++; return privateSource; };
-    f.deps.withGithubAccountsAsync = (probe, options) => withGithubAccountsAsync(probe, { ...options,
-      run(_command, args) {
-        assert.ok(!args.includes('switch'));
-        return { status: 0, stdout: args.includes('--json') ?
-          JSON.stringify({ hosts: { 'github.com': [{ login: 'owner' }] } }) : 'release-access-token' };
-      } });
-    const normalSnapshot = f.deps.kitSnapshot, normalRun = f.deps.runControlled;
-    f.deps.kitSnapshot = (_source, _options, env) => {
-      downloads++;
-      if (!env.GH_TOKEN) throw Object.assign(new Error('release access denied'), { accountAccess: true });
-      assert.equal(env.GH_TOKEN, 'release-access-token'); return normalSnapshot();
-    };
-    f.deps.runControlled = (...args) => { mutations++; return normalRun(...args); };
-    assert.equal(await f.run(operation), 0);
-    assert.equal(resolutions, 2); assert.equal(downloads, 2); assert.equal(mutations, 1);
-    assert.ok(!JSON.stringify([...f.pins.values()]).includes('release-access-token'));
-  }
-});
-test('source parser removes repository selection and preserves omitted defaults', () => {
-  assert.deepEqual(sourceArgs(['--target', 'claude']), { source: {}, rest: ['--target', 'claude'] });
-  for (const args of [['--repo', 'fixture/kit'], ['--repo=fixture/kit']]) assert.throws(() => sourceArgs(args), /no longer/);
-  assert.throws(() => sourceArgs(['--channel', 'beta', '--channel', 'stable']), /repeated/);
-  assert.throws(() => sourceArgs(['--transport', 'ssh']), /transport/);
+test('target parser rejects ambiguous projects and removed source flags', () => {
   assert.throws(() => targetArgs(['one', 'two']), /one kit project/);
   assert.throws(() => targetArgs(['/project', '--global']), /repository path/);
+  for (const flag of ['--channel', '--transport', '--repo']) assert.throws(() => targetArgs([flag, 'value']), /unknown kit option/);
 });
 test('new install writes pending intent before mutation and commits independently', async t => {
   const f = fixture(t);
@@ -97,18 +50,54 @@ test('new install writes pending intent before mutation and commits independentl
   assert.ok(f.events.indexOf('pending') < f.events.indexOf('mutate'));
   assert.ok(f.events.includes('installed')); assert.equal(f.events.at(-1), 'unlock');
 });
-test('pinned lifecycle never rediscovers after account changes', async t => {
+test('check and uninstall use the pinned snapshot while install and update re-pin to the local source', async t => {
   for (const operation of ['install', 'update', 'check', 'uninstall']) {
     const f = fixture(t); f.pin();
-    f.deps.discoverSource = () => { throw Error('rediscovery forbidden'); };
     assert.equal(await f.run(operation), 0);
-    assert.ok(f.events.includes(operation === 'update' ? 'download' : 'exact'));
+    const local = operation === 'install' || operation === 'update';
+    assert.ok(f.events.includes(local ? 'download' : 'exact'), operation);
+    assert.equal(f.events.includes(local ? 'exact' : 'download'), false, operation);
+    if (local) assert.equal([...f.pins.values()][0].source.distribution, 'local');
   }
+});
+test('install and update without a local path fail while check and uninstall keep the pinned remote source', async t => {
+  for (const distribution of ['public', 'private']) {
+    const remote = distribution === 'public' ? source
+      : { ...source, distribution, transport: 'gh', repositoryId: 42, ownerId: 7 };
+    for (const operation of ['install', 'update', 'check', 'uninstall']) {
+      const f = fixture(t); f.deps.preference = null; f.pin({ source: remote });
+      if (operation === 'install' || operation === 'update') {
+        await assert.rejects(f.run(operation), KIT_PATH_ERROR);
+        assert.equal(f.events.includes('download'), false);
+        assert.equal(f.events.includes('mutate'), false);
+      } else {
+        assert.equal(await f.run(operation), 0);
+        assert.ok(f.events.includes('exact'));
+      }
+    }
+  }
+  const fresh = fixture(t); fresh.deps.preference = null;
+  await assert.rejects(fresh.run('install'), KIT_PATH_ERROR);
+  assert.deepEqual(fresh.events, ['lock', 'unlock']);
+});
+test('a saved kit folder that no longer exists reports its own error before any state change', async t => {
+  for (const operation of ['install', 'update']) {
+    const f = fixture(t); f.pin();
+    f.deps.localSource = () => { throw new Error('local kit folder not found: /kit'); };
+    await assert.rejects(f.run(operation), { message: 'local kit folder not found: /kit' });
+    for (const event of ['download', 'pending', 'mutate']) assert.equal(f.events.includes(event), false);
+    assert.equal(f.events.at(-1), 'unlock');
+  }
+});
+test('a local pin without a stored preference keeps updating from its own folder', async t => {
+  const f = fixture(t); f.deps.preference = null; f.pin({ source: localKit });
+  assert.equal(await f.run('update'), 0);
+  assert.ok(f.events.includes('download'));
 });
 test('check and dry-run never write source state or acquire persistent locks', async t => {
   for (const [operation, dry] of [['check', false], ['install', true], ['update', true], ['uninstall', true]]) {
     const f = fixture(t); f.pin();
-    assert.equal(await f.run(operation, {}, [f.root, '--target', 'claude', ...(dry ? ['--dry-run'] : [])]), 0);
+    assert.equal(await f.run(operation, [f.root, '--target', 'claude', ...(dry ? ['--dry-run'] : [])]), 0);
     assert.equal(f.events.includes('lock'), false);
     assert.equal(f.events.includes('pending'), false); assert.equal(f.events.includes('removed'), false);
   }
@@ -141,7 +130,7 @@ test('CLI-owned circular selection preserves apply flags in project and global s
         return { code: 0, targets: ['claude'] };
       };
       const args = [global ? '--global' : f.root, '--tier', 'general'];
-      assert.equal(await f.run(operation, {}, args), 0);
+      assert.equal(await f.run(operation, args), 0);
       assert.deepEqual(calls, [
         { args: [...args, '--target', 'claude', ...(flag ? [flag, ...(['update', 'uninstall'].includes(operation) ? ['--force'] : [])] : [])], mode: 'apply' },
       ]);
@@ -159,7 +148,7 @@ test('cancelled interactive update does not apply or write pending state', async
     assert.deepEqual(hosts, ['claude']);
     return { code: 130, targets: [] };
   };
-  assert.equal(await f.run('update', {}, [f.root]), 130);
+  assert.equal(await f.run('update', [f.root]), 130);
   assert.equal(f.events.includes('pending'), false);
   assert.equal(f.events.includes('mutate'), false);
   assert.equal(f.events.at(-1), 'unlock');
@@ -169,8 +158,8 @@ test('all target pickers cancel before source access or mutation', async t => {
   for (const operation of ['install', 'check', 'uninstall']) {
     const f = fixture(t);
     f.deps.selectInstalledTargets = async () => ({ code: 130, targets: [] });
-    assert.equal(await f.run(operation, {}, [f.root]), 130);
-    for (const event of ['exact', 'discovery', 'download', 'pending', 'mutate'])
+    assert.equal(await f.run(operation, [f.root]), 130);
+    for (const event of ['exact', 'local', 'download', 'pending', 'mutate'])
       assert.equal(f.events.includes(event), false, `${operation}: ${event}`);
     if (operation !== 'check') assert.equal(f.events.at(-1), 'unlock');
   }
@@ -180,7 +169,7 @@ test('invalid target selections cannot cross the apply boundary', async t => {
   for (const targets of [null, [], ['claude', 'claude'], ['unknown']]) {
     const f = fixture(t);
     f.deps.selectInstalledTargets = async () => ({ code: 0, targets });
-    await assert.rejects(f.run('uninstall', {}, [f.root]), /invalid kit selection/);
+    await assert.rejects(f.run('uninstall', [f.root]), /invalid kit selection/);
     assert.equal(f.events.includes('mutate'), false);
     assert.equal(f.events.at(-1), 'unlock');
   }
@@ -208,9 +197,9 @@ test('reinstall accepts empty namespaced directory trees after successful uninst
       const skill = path.join(descriptor.skillsRoot, 'z-html-style', 'references', 'styles');
       fs.mkdirSync(skill, { recursive: true });
       f.pins.set(JSON.stringify(descriptor), { schema: 1, descriptor, source, snapshot, state: 'installed', operation: 'install' });
-      assert.equal(await f.run('uninstall', {}, args), 0);
+      assert.equal(await f.run('uninstall', args), 0);
       assert.equal(f.pins.size, 0);
-      assert.equal(await f.run('install', {}, args), 0, `${host} ${scope}`);
+      assert.equal(await f.run('install', args), 0, `${host} ${scope}`);
       assert.ok(fs.statSync(skill).isDirectory());
     }
   }
@@ -239,14 +228,6 @@ test('legacy inspection fails closed on excessive depth and preserves lock and s
     assert.equal(f.events.includes('download'), false);
   }
 });
-test('explicit source conflicts fail while compatible updates can change channel', async t => {
-  const f = fixture(t); f.pin();
-  await assert.rejects(f.run('check', { transport: 'gh' }), /transport conflicts/);
-  await assert.rejects(f.run('install', { channel: 'beta' }), /explicit update/);
-  let selected;
-  f.deps.kitSnapshot = candidate => { selected = candidate; return { pkg: '/fixture', snapshot: { ...snapshot, tag: 'v1.1.0-beta.1' }, cleanup() {} }; };
-  assert.equal(await f.run('update', { channel: 'beta' }), 0); assert.equal(selected.channel, 'beta');
-});
 test('interruption preserves pending exact generation for retry', async t => {
   const f = fixture(t);
   const normal = f.deps.runControlled;
@@ -254,7 +235,6 @@ test('interruption preserves pending exact generation for retry', async t => {
   assert.equal(await f.run('install'), 1);
   assert.equal([...f.pins.values()][0].state, 'pending');
   f.deps.runControlled = normal;
-  f.deps.discoverSource = () => { throw Error('must not rediscover'); };
   assert.equal(await f.run('install'), 0); assert.ok(f.events.includes('exact'));
 });
 test('partial uninstall retains cleanup state and a successful retry removes it', async t => {
@@ -298,7 +278,7 @@ test('automatic update lists only installed hosts within the requested scope', a
       return normal(pkg, args, callbacks);
     };
     const args = [scope === 'global' ? '--global' : f.root, '--tier', 'general', '--force'];
-    assert.equal(await f.run('update', {}, args), 0);
+    assert.equal(await f.run('update', args), 0);
     assert.deepEqual(calls, expected.map(host => [...args, '--target', host, '--update']));
   }
 });
@@ -308,19 +288,19 @@ test('empty update scope is a no-op without locking, prompting or fetching', asy
   seed(f, 'codex', 'global'); seed(f, 'codex', 'project', 'pending', 'update');
   seed(f, 'claude', 'project', 'cleanup-required', 'uninstall');
   f.deps.selectInstalledTargets = () => { throw Error('must not prompt'); };
-  assert.equal(await f.run('update', {}, [f.root, '--json']), 0);
+  assert.equal(await f.run('update', [f.root, '--json']), 0);
   assert.deepEqual(messages, ['No installed kits to update']);
   assert.deepEqual(f.events, []);
 });
 test('automatic dry-run selects installed targets but never writes or locks', async t => {
   interactive(t); const f = fixture(t); f.pin();
   f.deps.selectInstalledTargets = async hosts => ({ code: 0, targets: hosts });
-  assert.equal(await f.run('update', {}, [f.root, '--dry-run']), 0);
+  assert.equal(await f.run('update', [f.root, '--dry-run']), 0);
   assert.equal(f.events.includes('lock'), false); assert.equal(f.events.includes('pending'), false);
 });
 test('populated automatic update still requires explicit targets in JSON mode', async t => {
   interactive(t); const f = fixture(t); f.pin();
-  await assert.rejects(f.run('update', {}, [f.root, '--json']), /choose hosts with --target/);
+  await assert.rejects(f.run('update', [f.root, '--json']), /choose hosts with --target/);
   assert.deepEqual(f.events, []);
 });
 test('explicit target resumes an interrupted update without the installed-only picker', async t => {
@@ -332,11 +312,11 @@ test('explicit target resumes an interrupted update without the installed-only p
 test('automatic update fails closed on unsafe receipts or invalid selection', async t => {
   interactive(t); const f = fixture(t);
   f.deps.readPin = () => { throw Error('invalid installed source receipt'); };
-  await assert.rejects(f.run('update', {}, [f.root]), /invalid installed source receipt/);
+  await assert.rejects(f.run('update', [f.root]), /invalid installed source receipt/);
   assert.deepEqual(f.events, []);
   const other = fixture(t); other.pin();
   other.deps.selectInstalledTargets = async () => ({ code: 0, targets: ['codex'] });
-  await assert.rejects(other.run('update', {}, [other.root]), /invalid installed kit selection/);
+  await assert.rejects(other.run('update', [other.root]), /invalid installed kit selection/);
   assert.deepEqual(other.events, ['lock', 'unlock']);
 });
 test('mixed-source targets use their own generations and preserve a successful target on failure', async t => {
@@ -347,7 +327,7 @@ test('mixed-source targets use their own generations and preserve a successful t
   const generations = []; f.deps.pinnedSnapshot = pin => { generations.push(pin.snapshot.id); return { pkg: '/fixture', snapshot: pin.snapshot, cleanup() {} }; };
   const normal = f.deps.runControlled;
   f.deps.runControlled = (pkg, args, callbacks) => callbacks.descriptor.host === 'codex' ? Promise.reject(Error('failed')) : normal(pkg, args, callbacks);
-  assert.equal(await f.run('uninstall', {}, [f.root, '--target', 'claude,codex']), 1);
+  assert.equal(await f.run('uninstall', [f.root, '--target', 'claude,codex']), 1);
   assert.deepEqual(generations, ['a'.repeat(64), 'b'.repeat(64)]); assert.equal(f.pins.size, 1);
 });
 test('removed OMP and Pi targets fail with a clear message and a supported-target list', () => {
@@ -362,7 +342,7 @@ test('removed OMP and Pi targets fail with a clear message and a supported-targe
 test('removed targets stop before any lock, download, or prompt', async t => {
   for (const host of ['omp', 'pi']) {
     const f = fixture(t);
-    await assert.rejects(f.run('install', {}, [f.root, '--target', host]), /support was removed; supported targets: claude, codex/);
+    await assert.rejects(f.run('install', [f.root, '--target', host]), /support was removed; supported targets: claude, codex/);
     assert.deepEqual(f.events, []);
   }
 });

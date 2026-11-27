@@ -44,8 +44,8 @@ async fn kit_source_get() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn kit_source_set(choice: String) -> Result<String, String> {
-    blocking(move || kit::source_set(&choice)).await
+async fn kit_source_set(path: String) -> Result<String, String> {
+    blocking(move || kit::source_set(&path)).await
 }
 
 /// `<app_data_dir>/projects.json`, creating the directory.

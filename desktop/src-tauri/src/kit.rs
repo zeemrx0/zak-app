@@ -46,7 +46,6 @@ pub struct KitRequest {
     pub scope: Scope,
     /// Required, so a malformed request can never become a real run by omission.
     pub dry_run: bool,
-    pub channel: Option<String>,
 }
 
 const TARGETS: &[&str] = &["claude", "codex"];
@@ -107,15 +106,6 @@ pub fn build_argv(req: &KitRequest) -> Result<Vec<String>, String> {
         argv.push("--no-tier".into());
         argv.push(req.no_tiers.join(","));
     }
-    if let Some(ch) = req.channel.as_deref().filter(|c| !c.is_empty()) {
-        if !matches!(ch, "stable" | "beta") {
-            return Err(format!("invalid channel: {ch}"));
-        }
-        if matches!(req.action, Action::Install | Action::Update) {
-            argv.push("--channel".into());
-            argv.push(ch.into());
-        }
-    }
     if req.dry_run && req.action != Action::Check {
         argv.push("--dry-run".into());
     }
@@ -164,7 +154,7 @@ pub fn run(req: &KitRequest) -> Result<RunResult, String> {
     run_zak(build_argv(req)?)
 }
 
-/// `zak kit source` with no argument prints the current source when stdin is not a TTY.
+/// `zak kit source` with no argument prints `Kit source: <path>` or `Kit source: not set` when stdin is not a TTY.
 pub fn source_get() -> Result<String, String> {
     let r = run_zak(vec!["kit".into(), "source".into()])?;
     if r.exit_code == Some(0) {
@@ -174,22 +164,17 @@ pub fn source_get() -> Result<String, String> {
     }
 }
 
-/// `choice` is `public`, `private`, or `local:<folder>`.
-pub fn source_args(choice: &str) -> Result<Vec<String>, String> {
-    let mut argv = vec!["kit".to_string(), "source".to_string()];
-    match choice.split_once(':') {
-        None if matches!(choice, "public" | "private") => argv.push(choice.into()),
-        Some(("local", path)) if !path.trim().is_empty() && !path.trim().starts_with('-') => {
-            argv.push("local".into());
-            argv.push(path.trim().into());
-        }
-        _ => return Err("source must be public, private or local:<folder>".into()),
+/// `path` is the local kit folder.
+pub fn source_args(path: &str) -> Result<Vec<String>, String> {
+    let path = path.trim();
+    if path.is_empty() || path.starts_with('-') {
+        return Err("choose a kit folder".into());
     }
-    Ok(argv)
+    Ok(vec!["kit".into(), "source".into(), path.into()])
 }
 
-pub fn source_set(choice: &str) -> Result<String, String> {
-    let r = run_zak(source_args(choice)?)?;
+pub fn source_set(path: &str) -> Result<String, String> {
+    let r = run_zak(source_args(path)?)?;
     if r.exit_code == Some(0) {
         Ok(r.stdout.trim().to_string())
     } else {
@@ -257,7 +242,6 @@ mod tests {
             no_tiers: vec![],
             scope,
             dry_run: false,
-            channel: None,
         }
     }
 
@@ -268,25 +252,21 @@ mod tests {
     }
 
     #[test]
-    fn project_dry_run_install_with_channel() {
+    fn project_dry_run_install() {
         let mut r = req(Action::Install, Scope::Project("/work/app".into()));
         r.dry_run = true;
-        r.channel = Some("beta".into());
         let argv = build_argv(&r).unwrap();
         assert_eq!(
             argv,
-            ["kit", "install", "--target", "claude,codex", "/work/app", "--tier", "general,unity", "--channel", "beta", "--dry-run", "--json"]
+            ["kit", "install", "--target", "claude,codex", "/work/app", "--tier", "general,unity", "--dry-run", "--json"]
         );
     }
 
     #[test]
-    fn check_never_gets_dry_run_and_uninstall_ignores_channel() {
+    fn check_never_gets_dry_run() {
         let mut r = req(Action::Check, Scope::Global);
         r.dry_run = true;
         assert!(!build_argv(&r).unwrap().contains(&"--dry-run".to_string()));
-        let mut u = req(Action::Uninstall, Scope::Global);
-        u.channel = Some("stable".into());
-        assert!(!build_argv(&u).unwrap().contains(&"--channel".to_string()));
     }
 
     #[test]
@@ -337,9 +317,6 @@ mod tests {
         assert!(build_argv(&r).is_err());
         assert!(build_argv(&req(Action::Check, Scope::Project("--global".into()))).is_err());
         assert!(build_argv(&req(Action::Check, Scope::Project("  ".into()))).is_err());
-        let mut r = req(Action::Install, Scope::Global);
-        r.channel = Some("nightly".into());
-        assert!(build_argv(&r).is_err());
     }
 
     #[test]
@@ -380,12 +357,12 @@ mod tests {
     }
 
     #[test]
-    fn source_choices() {
-        assert_eq!(source_args("public").unwrap(), ["kit", "source", "public"]);
-        assert_eq!(source_args("local:/a b").unwrap(), ["kit", "source", "local", "/a b"]);
-        assert!(source_args("local:").is_err());
-        assert!(source_args("local:--x").is_err());
-        assert!(source_args("weird").is_err());
+    fn source_path() {
+        assert_eq!(source_args("/a b").unwrap(), ["kit", "source", "/a b"]);
+        assert_eq!(source_args("  /kit ").unwrap(), ["kit", "source", "/kit"]);
+        assert!(source_args("").is_err());
+        assert!(source_args("   ").is_err());
+        assert!(source_args("--x").is_err());
     }
 
     #[test]

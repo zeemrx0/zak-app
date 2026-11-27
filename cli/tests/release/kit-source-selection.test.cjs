@@ -4,12 +4,11 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { kitSourceCommand } = require('../../src/zak/kit-source-command');
-const { readPreference, writePreference, preferredSource } = require('../../src/zak/kit-source-preference');
+const { readPreference, writePreference } = require('../../src/zak/kit-source-preference');
 const { localSource } = require('../../src/zak/kit-local-source');
+const { stateRoot } = require('../../src/zak/kit-source-pins');
 const { kitLifecycle } = require('../../src/zak/kit-lifecycle');
 const { resolveTarget } = require('../../src/zak/kit-target-locator');
-const config = { schema: 2, publicRepository: 'fixture/public-kit', variableRepository: 'fixture/cli', privateVariable: 'ZAK_PRIVATE_REPO_URL' };
-const privateSource = { repository: 'fixture/private-kit', repositoryId: 4, ownerId: 5, distribution: 'private', transport: 'gh', channel: 'stable' };
 function home(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'zak-source-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -20,48 +19,66 @@ function home(t) {
     repository: { url: 'https://github.com/fixture/public-kit.git' } }));
   return { root, kit, env: { HOME: root } };
 }
+function capture(t) {
+  const lines = [], previous = console.log;
+  console.log = message => lines.push(String(message));
+  t.after(() => { console.log = previous; });
+  return lines;
+}
 const quiet = { tty: false };
-test('source command stores public, private and local choices', async t => {
-  const h = home(t);
-  const deps = { ...quiet, cwd: h.root, discoverSource: () => privateSource };
-  assert.equal(await kitSourceCommand(['local', 'kit'], config, h.env, deps), 0);
+test('source command stores a relative or absolute local folder', async t => {
+  const h = home(t); capture(t);
+  assert.equal(await kitSourceCommand(['kit'], h.env, { ...quiet, cwd: h.root }), 0);
   assert.deepEqual(readPreference(h.env), { schema: 1, kind: 'local', path: h.kit });
-  assert.equal(await kitSourceCommand(['private'], config, h.env, deps), 0);
-  assert.equal(readPreference(h.env).kind, 'private');
-  assert.equal(await kitSourceCommand(['public'], config, h.env, deps), 0);
-  assert.equal(readPreference(h.env).kind, 'public');
+  assert.equal(await kitSourceCommand([h.kit], h.env, { ...quiet, cwd: '/' }), 0);
+  assert.equal(readPreference(h.env).path, h.kit);
 });
-test('source command rejects unavailable private access and invalid folders', async t => {
+test('source command rejects invalid folders and extra arguments', async t => {
   const h = home(t);
-  const deps = { ...quiet, cwd: h.root, discoverSource: () => ({ distribution: 'public' }) };
-  await assert.rejects(kitSourceCommand(['private'], config, h.env, deps), /not available/);
-  await assert.rejects(kitSourceCommand(['local', h.root], config, h.env, deps), /not a z-agent-kit checkout/);
-  await assert.rejects(kitSourceCommand(['remote'], config, h.env, deps), /usage/);
+  const deps = { ...quiet, cwd: h.root };
+  await assert.rejects(kitSourceCommand([h.root], h.env, deps), /not a z-agent-kit checkout/);
+  await assert.rejects(kitSourceCommand(['missing'], h.env, deps), /not found/);
+  for (const args of [['local', 'kit'], ['kit', 'other'], ['--public'], ['']])
+    await assert.rejects(kitSourceCommand(args, h.env, deps), { message: 'usage: zak kit source <path>' });
   assert.equal(readPreference(h.env), null);
 });
-test('interactive picker shows private only when authorized, then asks for the local path', async t => {
-  const h = home(t);
-  for (const authorized of [false, true]) {
-    let shown;
-    const prompt = { async selectKitSource({ options }) { shown = options.map(o => o.value); return 'local'; },
-      async promptKitPath({ validate }) { assert.match(validate(h.root), /not a z-agent-kit/); assert.equal(validate(h.kit), undefined); return h.kit; } };
-    const deps = { tty: true, cwd: h.root, prompt: () => prompt,
-      discoverSource: () => authorized ? privateSource : (() => { throw new Error('no access'); })() };
-    assert.equal(await kitSourceCommand([], config, h.env, deps), 0);
-    assert.deepEqual(shown, authorized ? ['public', 'private', 'local'] : ['public', 'local']);
-    assert.equal(readPreference(h.env).path, h.kit);
-  }
-  const cancel = { tty: true, cwd: h.root, discoverSource: () => privateSource, prompt: () => ({ async selectKitSource() { return null; } }) };
-  assert.equal(await kitSourceCommand([], config, h.env, cancel), 130);
+test('source command without a terminal prints the stored path or not set', async t => {
+  const h = home(t), lines = capture(t);
+  assert.equal(await kitSourceCommand([], h.env, { ...quiet, cwd: h.root }), 0);
+  writePreference({ schema: 1, kind: 'local', path: h.kit }, h.env);
+  assert.equal(await kitSourceCommand([], h.env, { ...quiet, cwd: h.root }), 0);
+  assert.deepEqual(lines, ['Kit source: not set', `Kit source: ${h.kit}`]);
 });
-test('preferred sources resolve to the expected identity', t => {
+test('interactive source command prompts for the local path and honors cancel', async t => {
+  const h = home(t); capture(t);
+  let initial;
+  const prompt = { async promptKitPath({ initialValue, validate }) {
+    initial = initialValue;
+    assert.match(validate(h.root), /not a z-agent-kit/); assert.equal(validate(h.kit), undefined); return h.kit; } };
+  assert.equal(await kitSourceCommand([], h.env, { tty: true, cwd: h.root, prompt: () => prompt, defaultLocalPath: () => '/default' }), 0);
+  assert.equal(initial, '/default');
+  assert.equal(readPreference(h.env).path, h.kit);
+  await kitSourceCommand([], h.env, { tty: true, cwd: h.root, prompt: () => ({ async promptKitPath({ initialValue }) { initial = initialValue; return null; } }) });
+  assert.equal(initial, h.kit);
+  assert.equal(await kitSourceCommand([], h.env, { tty: true, cwd: h.root, prompt: () => ({ async promptKitPath() { return null; } }) }), 130);
+  assert.equal(readPreference(h.env).path, h.kit);
+});
+test('local sources derive their channel from the kit version', t => {
   const h = home(t);
-  assert.deepEqual(preferredSource({ kind: 'public' }, config, {}, null),
-    { repository: 'fixture/public-kit', transport: 'curl', channel: 'stable', distribution: 'public' });
-  assert.equal(preferredSource({ kind: 'private' }, config, {}, () => privateSource), privateSource);
   assert.deepEqual(localSource(h.kit), { repository: 'fixture/public-kit', transport: 'local', channel: 'stable', distribution: 'local', path: h.kit });
-  assert.throws(() => localSource(h.kit, 'beta'), /not a beta version/);
-  assert.throws(() => preferredSource({ kind: 'local', path: h.kit }, config, { transport: 'gh' }), /--transport/);
+  fs.writeFileSync(path.join(h.kit, 'package.json'), JSON.stringify({ name: 'z-agent-kit', version: '1.3.0-beta.2', kitControlProtocol: 1,
+    repository: { url: 'https://github.com/fixture/public-kit.git' } }));
+  assert.equal(localSource(h.kit).channel, 'beta');
+});
+test('a stored public or private preference reads as not set', t => {
+  const h = home(t);
+  assert.equal(readPreference(h.env), null);
+  fs.writeFileSync(path.join(stateRoot(h.env, true), 'source-preference.json'), JSON.stringify({ schema: 1, kind: 'private' }), { mode: 0o600 });
+  assert.equal(readPreference(h.env), null);
+  fs.writeFileSync(path.join(stateRoot(h.env), 'source-preference.json'), JSON.stringify({ schema: 1, kind: 'public' }), { mode: 0o600 });
+  assert.equal(readPreference(h.env), null);
+  fs.writeFileSync(path.join(stateRoot(h.env), 'source-preference.json'), JSON.stringify({ schema: 1, kind: 'other' }), { mode: 0o600 });
+  assert.throws(() => readPreference(h.env), /invalid kit source preference/);
 });
 test('update switches an installed remote pin to the selected local source', async t => {
   const h = home(t);
@@ -72,7 +89,6 @@ test('update switches an installed remote pin to the selected local source', asy
   let pin = { schema: 1, descriptor, source: remote, snapshot, state: 'installed', operation: 'install' }, used;
   const deps = {
     readPin: () => pin, writePin(value) { pin = value; }, removePin() {}, lockSources: () => () => {},
-    refreshPinnedSource() { throw new Error('remote refresh must not run'); },
     async kitSnapshot(source) { used = source; return { pkg: '/fixture', snapshot, cleanup() {} }; },
     async runControlled(_pkg, _args, callbacks) {
       await callbacks.onPrepare(callbacks.descriptor);
@@ -80,7 +96,7 @@ test('update switches an installed remote pin to the selected local source', asy
       return { code: 0 };
     },
   };
-  assert.equal(await kitLifecycle('update', {}, [h.root, '--target', 'codex', '--json'], config, h.env, deps), 0);
+  assert.equal(await kitLifecycle('update', [h.root, '--target', 'codex', '--json'], h.env, deps), 0);
   assert.equal(used.distribution, 'local');
   assert.equal(pin.source.path, h.kit);
   assert.equal(pin.state, 'installed');

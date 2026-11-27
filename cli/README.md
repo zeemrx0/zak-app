@@ -35,32 +35,17 @@ options and update only the kit, not the CLI.
 Supported targets are `claude` and `codex`.
 Omit `--target` to use the interactive picker.
 
-For private kit access, install GitHub CLI (`gh`) and authenticate with an account
-that has the required permissions:
-
-```sh
-gh auth login
-```
-
-Without GitHub CLI or a login, new installations use the public kit.
-On authentication or repository-access failures, `zak` tries the other saved
-`github.com` accounts until one passes source verification. The selected account
-is used for that operation's release downloads without changing the globally
-active `gh` account. Tokens are never written to installation records.
-Explicit `GH_TOKEN` or `GITHUB_TOKEN` credentials disable saved-account fallback.
-Network failures, rate limits, and source identity mismatches stop the operation.
-If no account has access, the operation stops instead of switching kits.
-Existing installations retain their kit source.
+Kits come from a local `z-agent-kit` folder. Clone `z-agent-kit` yourself and set its path
+with `zak kit source <path>` (see section 3). `zak kit install` and `zak kit update` fail with
+`set a local kit path: zak kit source <path>` until you set a path.
 
 Append `--global` (or `-g`) for user-level guidance. Otherwise, commands apply to the current
 project or a supplied project path. Do not combine `--global` with a project path.
 Global installations require explicit tier selection.
 
 Add `--dry-run` to preview changes without applying them.
-For beta kits, add `--channel beta`. Kit and CLI channels are independent.
-Change an installed kit's channel with `zak kit update`.
-`--transport gh` supports authenticated downloads; private kits cannot use `--transport curl`.
-Do not change the transport of an existing installation.
+The kit channel follows the version of the local kit folder: a `-beta.N` version is beta, any other release version is stable.
+Kit and CLI channels are independent.
 
 Updates overwrite local edits to kit-managed files. Uninstall removes kit-managed files even when edited.
 Unrelated files, path safety checks, and ownership checks remain protected. Use `--dry-run` to preview either operation.
@@ -71,14 +56,18 @@ installer, review any retained files, then install it with `zak`.
 ## 3. Choose the kit source
 
 ```sh
-zak kit source                    # interactive: Public remote, Private remote (only when authorized), Local folder
-zak kit source local ./z-agent-kit
-zak kit source public             # or: private
+zak kit source ./z-agent-kit      # set the local kit folder
+zak kit source                    # in a terminal: prompt for the folder; otherwise print it
 ```
 
-The selected source applies to new installs and to `zak update` of installed kits.
-A local source packs the folder with `npm pack` and installs it like a release, so you can test kit changes before you publish them.
-Run `zak kit source` with no argument in a non-interactive shell to print the current source.
+The folder must be a `z-agent-kit` checkout. `zak kit source` with no argument and no terminal prints
+`Kit source: <path>` or `Kit source: not set`.
+
+The path applies to new installs and to `zak update` of installed kits.
+`zak` packs the folder with `npm pack` and installs it like a release, so you can test kit changes before you publish them.
+`zak kit check` and `zak kit uninstall` use the kit snapshot pinned when the kit was installed.
+An installation that was pinned to a public or private remote kit by an earlier release keeps working for `check` and `uninstall`.
+Set a local path to update it, which pins it to the local folder.
 
 ## 4. Update or remove the CLI
 

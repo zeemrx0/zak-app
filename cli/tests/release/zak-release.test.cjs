@@ -4,7 +4,6 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawnSync } = require('node:child_process');
 const { buildRelease } = require('../../scripts/build/build-release.cjs');
 const { runZak, runProcess } = require('../zak-release-helper.cjs');
 const { unpack } = require('../../src/release/archive-package');
@@ -21,8 +20,7 @@ test('real CLI release upgrades independently and preserves kit state/cache', { 
   for (const rel of ['src', 'scripts', 'package.json', 'package-lock.json', 'README.md', 'LICENSE'])
     fs.cpSync(path.join(ROOT, rel), path.join(firstRoot, rel), { recursive: true });
 
-  const buildEnv = { ZAK_PUBLIC_REPO: 'fixture/kit' };
-  const first = buildRelease(firstRoot, path.join(dir, 'release0'), buildEnv);
+  const first = buildRelease(firstRoot, path.join(dir, 'release0'));
   const firstBytes = fs.readFileSync(path.join(first.out, first.archive));
   const nextRoot = unpack(firstBytes, path.join(dir, 'next-source'));
   const pkg = JSON.parse(fs.readFileSync(path.join(nextRoot, 'package.json')));
@@ -30,10 +28,10 @@ test('real CLI release upgrades independently and preserves kit state/cache', { 
   pkg.version = `${major}.${minor}.${patch + 1}`;
   fs.writeFileSync(path.join(nextRoot, 'package.json'), JSON.stringify(pkg));
   fs.writeFileSync(path.join(nextRoot, 'package-lock.json'), JSON.stringify({ version: pkg.version, lockfileVersion: 3, packages: { '': { version: pkg.version } } }));
-  const second = buildRelease(nextRoot, path.join(dir, 'release1'), buildEnv);
+  const second = buildRelease(nextRoot, path.join(dir, 'release1'));
   assert.notEqual(second.archive, first.archive, 'upgrade fixture must use a distinct version');
   const secondBytes = fs.readFileSync(path.join(second.out, second.archive));
-  const kitRoot = path.join(dir, 'kit/package'); fs.mkdirSync(path.join(kitRoot, 'scripts'), { recursive: true });
+  const kitRoot = path.join(dir, 'kit'); fs.mkdirSync(path.join(kitRoot, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(kitRoot, 'package.json'), JSON.stringify({ name: 'z-agent-kit', version: '9.0.0',
     kitControlProtocol: 1, repository: 'https://github.com/fixture/kit.git' }));
   fs.mkdirSync(path.join(kitRoot, 'src/installer/cli'), { recursive: true });
@@ -48,16 +46,11 @@ else if(!a.includes('--check')){fs.mkdirSync(descriptor.controlRoot,{recursive:t
 else if(fs.readFileSync(f,'utf8')!=='kit 9.0.0')process.exitCode=2;
 process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:process.exitCode||0,complete:!process.exitCode});
 }else process.disconnect();});process.send({schema:1,kind:'prepare',sequence:1,descriptor});`);
-  const kitArchive = path.join(dir, 'kit.tgz');
-  assert.equal(spawnSync('tar', ['-czf', kitArchive, '-C', path.dirname(kitRoot), 'package']).status, 0);
-  const kitBytes = fs.readFileSync(kitArchive); let corrupt = false, requests = 0;
+  let corrupt = false;
   const server = http.createServer((req, res) => {
-    requests++;
     if (req.url === '/api/latest') res.end(JSON.stringify(metadata(second.tag, second.archive, secondBytes)));
-    else if (req.url === '/kit-api/latest') res.end(JSON.stringify(metadata('v9.0.0', 'z-agent-kit-v9.0.0.tgz', kitBytes)));
     else if (req.url === `/${first.archive}`) res.end(firstBytes);
     else if (req.url === `/${second.archive}`) res.end(corrupt ? Buffer.concat([secondBytes, Buffer.from('corrupt')]) : secondBytes);
-    else if (req.url === '/z-agent-kit-v9.0.0.tgz') res.end(kitBytes);
     else res.writeHead(404).end();
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -73,11 +66,9 @@ process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:process.exit
     assert.equal(result.code, 0, result.output); return result.output;
   };
   assert.equal((await command(['--version'])).trim(), first.version);
-  const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'gh'), `#!${process.execPath}\nprocess.stderr.write('not logged into any GitHub hosts');process.exit(1);`, { mode: 0o755 });
   const kitOptions = ['--target', 'claude,codex', '--json'];
-  const kitEnv = { ZAK_RELEASE_API_URL: url + '/kit-api', PATH: bin + ':' + process.env.PATH, GH_TOKEN: '', GITHUB_TOKEN: '' };
-  await command(['kit', 'install', ...kitOptions], kitEnv);
+  await command(['kit', 'source', kitRoot]);
+  await command(['kit', 'install', ...kitOptions]);
   const beforeKit = fs.readFileSync(path.join(project, '.fixture-kit'));
   const receipt = path.join(home, '.local/share/zak/receipt.json');
   corrupt = true;
@@ -88,11 +79,9 @@ process.send({schema:1,kind:'result',sequence:2,descriptor,exitCode:process.exit
   assert.equal((await command(['--version'])).trim(), second.version);
   assert.deepEqual(fs.readFileSync(path.join(project, '.fixture-kit')), beforeKit);
   const beforeCli = fs.readFileSync(receipt);
-  await command(['kit', 'update', ...kitOptions], kitEnv);
+  await command(['kit', 'update', ...kitOptions]);
   assert.deepEqual(fs.readFileSync(receipt), beforeCli);
-  const beforeRequests = requests;
-  await command(['kit', 'check', ...kitOptions], kitEnv);
-  assert.equal(requests, beforeRequests, 'check did not reuse cached kit');
+  await command(['kit', 'check', ...kitOptions]);
   const active = JSON.parse(fs.readFileSync(receipt)), cliRoot = path.dirname(receipt);
   const uninstallModule = path.join(cliRoot, 'releases', active.active, 'package/src/zak/cli-uninstall.js');
   const interruptedScript = `const fs=require('node:fs'),rmdir=fs.rmdirSync;fs.rmdirSync=p=>{if(p===${JSON.stringify(cliRoot)})throw Error('injected final cleanup');return rmdir(p);};try{require(${JSON.stringify(uninstallModule)}).selfUninstall([]);}catch(error){console.error(error.message);process.exitCode=3;}`;

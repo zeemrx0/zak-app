@@ -38,7 +38,7 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
   the applied operations with the plan and warns when they differ (the release may have changed in between),
   then refreshes the lock data and checks again. The same sheet type confirms every other change in the app.
 - **Projects.** "Add Project…" opens the folder picker. Projects persist between runs. "Remove from List…" under
-  More forgets a project and does not uninstall anything. More also sets the update channel (default, stable, beta).
+  More forgets a project and does not uninstall anything.
 - **Agent Models.** A table of every known agent with Source, Inherit and Model. Each model in the chain carries its own effort, shown as `provider/id · effort`.
   Select a row to edit its model chain (order, add, remove, and an effort for each model) and inherit in the inspector. A model with no stored effort shows the effort inherited from a legacy alias-level setting, else medium, and every save writes an explicit effort for each model. The page refreshes when the window regains focus: it reloads the state when there are no unsaved edits, and only re-runs the preview when there are. The Active model picker
   pins which entry of the chain the router tries first, and the rest of the chain is the fallback (then the
@@ -56,9 +56,8 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
   Default…" (only for an edited template) confirms in the same sheet and deletes the override. Switching templates
   with unsaved edits asks before it discards them. Overrides live in `~/.zak/templates` (or `Z_TEMPLATES_DIR`).
   If Node.js or `templates.cjs` is missing, the page says to install the kit's `unity` tier for Claude Code or Codex.
-- **Kit Source.** Shows the current source (Public, Private, a local folder, or Automatic when no preference is
-  set) and switches between Public, Private and a local folder, with a confirm sheet before the change. If the
-  CLI rejects a choice, the sheet shows its message.
+- **Kit Source.** Shows the current local kit folder (or "Not set") and sets another folder, with a confirm sheet
+  before the change. If the CLI rejects the folder, the sheet shows its message.
 
 ## Install
 
@@ -160,8 +159,8 @@ when `node` or `z-delegate.cjs` is missing. It never touches your real config.
 
 | Command | Used for |
 | --- | --- |
-| `zak kit <check\|install\|update\|uninstall> --target <t> (--global \| <project>) [--tier <list>] [--no-tier <list>] [--channel stable\|beta] [--dry-run] --json` (`--no-tier` for projects only) | Install pages and plan sheet. stdin is closed, so it never waits for a prompt. |
-| `zak kit source` and `zak kit source <public\|private\|local <path>>` | Show and set the kit source. |
+| `zak kit <check\|install\|update\|uninstall> --target <t> (--global \| <project>) [--tier <list>] [--no-tier <list>] [--dry-run] --json` (`--no-tier` for projects only) | Install pages and plan sheet. stdin is closed, so it never waits for a prompt. |
+| `zak kit source` and `zak kit source <path>` | Show and set the local kit folder. |
 | `zak --version`, `node --version` | Tool status. |
 | `node z-delegate.cjs settings state`, `settings preview` and `settings save` (JSON on stdin, one JSON object on stdout) | Agent Models. One process per request; nothing keeps running. |
 | `node templates.cjs list`, `get`, `save` and `reset` (JSON on stdin, one JSON object on stdout) | Templates. One process per request. |

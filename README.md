@@ -19,7 +19,7 @@ export PATH="$HOME/.local/bin:$PATH"
 zak --version
 ```
 
-See [cli/README.md](cli/README.md) for usage, kit sources, beta channel and removal.
+See [cli/README.md](cli/README.md) for usage, the local kit source, beta channel and removal.
 
 ## Install the desktop app
 
