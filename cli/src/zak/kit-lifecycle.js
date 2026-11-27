@@ -126,7 +126,7 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
         notice(`zak kit (${entry.host}): follows ${entry.follow} but has no installed pin; skipped`);
       else entries.push({ ...entry, descriptor });
     }
-    const plans = entries.map(({ descriptor, follow }) => {
+    const plans = entries.map(({ descriptor, follow, expanded }) => {
       const pin = deps.readPin(descriptor, env);
       if (!pin) {
         if (operation !== 'install') throw new Error('no trusted source pin; remove legacy targets with the original installer');
@@ -136,18 +136,20 @@ async function kitLifecycle(operation, args, env = process.env, dependencies = {
       const exact = !!pin && (pin.state !== 'installed' || operation === 'check' || operation === 'uninstall');
       const localPath = preference?.path || (pin?.source.distribution === 'local' ? pin.source.path : null);
       if (!exact && !localPath) throw new Error(KIT_PATH_ERROR);
-      return { descriptor, pin, exact, follow, source: exact ? pin.source : deps.localSource(localPath) };
+      return { descriptor, pin, exact, follow, expanded, source: exact ? pin.source : deps.localSource(localPath) };
     });
     let exitCode = 0;
-    for (const { descriptor, pin, exact, follow, source } of plans) {
+    for (const { descriptor, pin, exact, follow, expanded, source } of plans) {
       let handle;
       try {
         handle = exact ? deps.pinnedSnapshot(pin, env) : await deps.kitSnapshot(source, { readonly }, env);
         if (!args.includes('--json')) ui.info(`Kit source (${descriptor.host}): ${describeSource(source)} ${handle.snapshot.tag}`, { plain: !visual });
         const pending = { schema: 1, descriptor, source, snapshot: handle.snapshot, state: 'pending', operation };
-        const link = follow && operation === 'update' && !parsed.rest.some(arg => ['--follow', '--no-follow'].includes(arg));
-        const forwarded = [...parsed.rest, ...(link ? ['--follow', follow] : []), '--target', descriptor.host,
-          ...operationFlags.filter(flag => !parsed.rest.includes(flag))];
+        // --no-follow names the --target hosts only; a host added because it follows one of them keeps its link.
+        const rest = expanded ? parsed.rest.filter(arg => arg !== '--no-follow') : parsed.rest;
+        const link = follow && operation === 'update' && !rest.some(arg => ['--follow', '--no-follow'].includes(arg));
+        const forwarded = [...rest, ...(link ? ['--follow', follow] : []), '--target', descriptor.host,
+          ...operationFlags.filter(flag => !rest.includes(flag))];
         if (follow && !args.includes('--json')) ui.info(`zak kit (${descriptor.host}): follows ${follow}`, { plain: !visual });
         if (forwarded.some(arg => SELECTION_FLAGS.includes(arg))) assertSelectionProtocol(handle.pkg, handle.snapshot.tag);
         sessionStarted = visual;

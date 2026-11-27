@@ -405,6 +405,15 @@ test('update on a source also updates a host that follows it, after the source',
     [f.root, '--select', 'a/skills/z-x', '--json', '--target', 'claude', '--update', '--force'],
     [f.root, '--select', 'a/skills/z-x', '--json', '--follow', 'claude', '--target', 'codex', '--update', '--force']]);
 });
+test('--no-follow on a source is not forwarded to the host that follows it', async t => {
+  const f = fixture(t); f.pin(); follower(f);
+  f.deps.kitSnapshot = () => ({ pkg: selectionPackage(t, 1), snapshot, cleanup() {} });
+  const calls = recordCalls(f);
+  assert.equal(await f.run('update', [f.root, '--target', 'claude', '--no-follow', '--json']), 0);
+  assert.deepEqual(calls, [
+    [f.root, '--no-follow', '--json', '--target', 'claude', '--update', '--force'],
+    [f.root, '--json', '--follow', 'claude', '--target', 'codex', '--update', '--force']]);
+});
 test('check on a source also checks its follower without a follow flag', async t => {
   const f = fixture(t); f.pin(); follower(f);
   const calls = recordCalls(f);
