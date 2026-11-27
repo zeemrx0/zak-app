@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-kit-inventory"
+description = "Enables the kit_inventory command without any pre-configured scope."
+commands.allow = ["kit_inventory"]
+
+[[permission]]
+identifier = "deny-kit-inventory"
+description = "Denies the kit_inventory command without any pre-configured scope."
+commands.deny = ["kit_inventory"]

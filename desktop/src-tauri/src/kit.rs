@@ -3,9 +3,6 @@
 use crate::tools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeSet;
-use std::fs;
-use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -43,6 +40,15 @@ pub struct KitRequest {
     /// Project scope only: tiers the kit would add by default (general, detected) that must be removed.
     #[serde(default)]
     pub no_tiers: Vec<String>,
+    /// Item IDs (`tier/kind/name`). Install and update only; excludes `tiers` and `no_tiers`.
+    #[serde(default)]
+    pub select: Vec<String>,
+    /// Host whose selection this host copies and keeps following. One target, install and update only.
+    #[serde(default)]
+    pub follow: Option<String>,
+    /// Stops following and keeps the installed files. Install and update only.
+    #[serde(default)]
+    pub no_follow: bool,
     pub scope: Scope,
     /// Required, so a malformed request can never become a real run by omission.
     pub dry_run: bool,
@@ -53,6 +59,30 @@ const TARGETS: &[&str] = &["claude", "codex"];
 fn valid_tier(t: &str) -> bool {
     t.starts_with(|c: char| c.is_ascii_alphanumeric())
         && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+const KINDS: &[&str] = &["skills", "rules", "agents"];
+
+/// `tier/kind/name`: a valid tier, `skills|rules|agents`, and a `z-` name of `[a-z0-9-]` with an optional `.md`.
+fn valid_item(id: &str) -> bool {
+    let parts: Vec<&str> = id.split('/').collect();
+    let [tier, kind, name] = parts[..] else { return false };
+    let stem = name.strip_suffix(".md").unwrap_or(name);
+    valid_tier(tier)
+        && KINDS.contains(&kind)
+        && stem.starts_with("z-")
+        && stem.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn project_path(path: &str) -> Result<&str, String> {
+    let path = path.trim();
+    if path.is_empty() {
+        return Err("project scope needs a folder path".into());
+    }
+    if path.starts_with('-') {
+        return Err("project path must not start with '-'".into());
+    }
+    Ok(path)
 }
 
 /// Builds the arguments after the `zak` program name. Always non-interactive: explicit targets, `--json`,
@@ -76,11 +106,42 @@ pub fn build_argv(req: &KitRequest) -> Result<Vec<String>, String> {
     if let Some(bad) = req.no_tiers.iter().find(|t| !valid_tier(t)) {
         return Err(format!("invalid tier name: {bad:?}"));
     }
+    let applies = matches!(req.action, Action::Install | Action::Update);
+    if let Some(bad) = req.select.iter().find(|id| !valid_item(id)) {
+        return Err(format!("invalid item id: {bad:?}"));
+    }
+    if !req.select.is_empty() {
+        if !applies {
+            return Err("select applies to install and update only".into());
+        }
+        if !req.tiers.is_empty() || !req.no_tiers.is_empty() {
+            return Err("select cannot be combined with tiers or no_tiers".into());
+        }
+    }
+    if req.follow.is_some() || req.no_follow {
+        if !applies {
+            return Err("follow and no_follow apply to install and update only".into());
+        }
+        if req.follow.is_some() && req.no_follow {
+            return Err("follow and no_follow exclude each other".into());
+        }
+    }
+    if let Some(source) = &req.follow {
+        if !TARGETS.contains(&source.as_str()) {
+            return Err(format!("unknown follow host: {source}"));
+        }
+        if targets.len() != 1 {
+            return Err("follow needs exactly one target".into());
+        }
+        if targets[0] == source {
+            return Err("a host cannot follow itself".into());
+        }
+    }
     let mut argv = vec!["kit".to_string(), req.action.as_str().to_string(), "--target".into(), targets.join(",")];
     match &req.scope {
         Scope::Global => {
-            if req.tiers.is_empty() {
-                return Err("global scope needs at least one tier".into());
+            if req.action == Action::Install && req.tiers.is_empty() && req.select.is_empty() {
+                return Err("global install needs at least one tier or item".into());
             }
             if !req.no_tiers.is_empty() {
                 return Err("global scope takes an exact tier list; no_tiers applies to projects only".into());
@@ -88,14 +149,7 @@ pub fn build_argv(req: &KitRequest) -> Result<Vec<String>, String> {
             argv.push("--global".into());
         }
         Scope::Project(path) => {
-            let path = path.trim();
-            if path.is_empty() {
-                return Err("project scope needs a folder path".into());
-            }
-            if path.starts_with('-') {
-                return Err("project path must not start with '-'".into());
-            }
-            argv.push(path.to_string());
+            argv.push(project_path(path)?.to_string());
         }
     }
     if !req.tiers.is_empty() {
@@ -105,6 +159,17 @@ pub fn build_argv(req: &KitRequest) -> Result<Vec<String>, String> {
     if !req.no_tiers.is_empty() {
         argv.push("--no-tier".into());
         argv.push(req.no_tiers.join(","));
+    }
+    if !req.select.is_empty() {
+        argv.push("--select".into());
+        argv.push(req.select.join(","));
+    }
+    if let Some(source) = &req.follow {
+        argv.push("--follow".into());
+        argv.push(source.clone());
+    }
+    if req.no_follow {
+        argv.push("--no-follow".into());
     }
     if req.dry_run && req.action != Action::Check {
         argv.push("--dry-run".into());
@@ -182,43 +247,22 @@ pub fn source_set(path: &str) -> Result<String, String> {
     }
 }
 
-/// Folder the zak CLI caches kit releases under: `$XDG_DATA_HOME/zak-kit-cache`, else `~/.local/share/zak-kit-cache`.
-pub fn kit_cache_dir() -> Option<PathBuf> {
-    let base = tools::env_value("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| tools::home_dir().map(|h| h.join(".local/share")))?;
-    Some(base.join("zak-kit-cache"))
+/// Arguments of `zak kit inventory` for both hosts in one scope.
+pub fn inventory_argv(scope: &Scope) -> Result<Vec<String>, String> {
+    let place = match scope {
+        Scope::Global => "--global".to_string(),
+        Scope::Project(path) => project_path(path)?.to_string(),
+    };
+    Ok(["kit", "inventory", "--target", "claude,codex"].map(String::from).into_iter().chain([place, "--json".into()]).collect())
 }
 
-fn sub_dirs(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
-    entries.flatten().filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)).map(|e| e.path()).collect()
-}
-
-/// Tier names the cached kit releases offer. Each `<source>/<channel>/cache.json` names the current package by
-/// id, and that package has one `agents/tiers/<name>/` folder per tier. Read-only; empty when nothing is cached.
-pub fn cached_tiers(cache: &Path) -> Vec<String> {
-    let mut out = BTreeSet::new();
-    for source in sub_dirs(cache) {
-        for channel in sub_dirs(&source) {
-            let id = fs::read_to_string(channel.join("cache.json"))
-                .ok()
-                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-                .and_then(|v| v.get("id")?.as_str().map(str::to_string));
-            let Some(id) = id.filter(|id| !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())) else { continue };
-            for tier in sub_dirs(&channel.join(id).join("package/agents/tiers")) {
-                if let Some(name) = tier.file_name().and_then(|n| n.to_str()).filter(|n| valid_tier(n)) {
-                    out.insert(name.to_string());
-                }
-            }
-        }
+/// Items, requirements, digest and per-host selection from the local kit source, as the kit prints them.
+pub fn inventory(scope: &Scope) -> Result<Value, String> {
+    let r = run_zak(inventory_argv(scope)?)?;
+    if r.exit_code != Some(0) {
+        return Err(error_text(&r));
     }
-    out.into_iter().collect()
-}
-
-pub fn available_tiers() -> Vec<String> {
-    kit_cache_dir().map(|d| cached_tiers(&d)).unwrap_or_default()
+    serde_json::from_str(&r.stdout).map_err(|e| format!("kit inventory returned invalid JSON: {e}"))
 }
 
 fn error_text(r: &RunResult) -> String {
@@ -240,6 +284,9 @@ mod tests {
             targets: vec!["claude".into(), "codex".into()],
             tiers: vec!["general".into(), "unity".into()],
             no_tiers: vec![],
+            select: vec![],
+            follow: None,
+            no_follow: false,
             scope,
             dry_run: false,
         }
@@ -310,7 +357,7 @@ mod tests {
         assert!(build_argv(&r).is_err());
         r.targets = vec!["claude;rm".into()];
         assert!(build_argv(&r).is_err());
-        let mut r = req(Action::Update, Scope::Global);
+        let mut r = req(Action::Install, Scope::Global);
         r.tiers.clear();
         assert!(build_argv(&r).is_err());
         r.tiers = vec!["--force".into()];
@@ -365,23 +412,146 @@ mod tests {
         assert!(source_args("--x").is_err());
     }
 
+    const ID_A: &str = "general/skills/z-ste";
+    const ID_B: &str = "unity/rules/z-unity-core.md";
+
+    fn selecting(action: Action, scope: Scope, ids: &[&str]) -> KitRequest {
+        let mut r = req(action, scope);
+        r.tiers.clear();
+        r.select = ids.iter().map(|s| s.to_string()).collect();
+        r
+    }
+
     #[test]
-    fn cached_tiers_reads_the_current_package_of_each_source() {
-        let root = std::env::temp_dir().join(format!("zak-desktop-tiers-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&root);
-        let current = root.join("src1/stable");
-        for t in ["general", "unity", "bad name"] {
-            fs::create_dir_all(current.join("abc123/package/agents/tiers").join(t)).unwrap();
+    fn select_becomes_one_ordered_flag() {
+        let r = selecting(Action::Update, Scope::Project("/p".into()), &[ID_B, ID_A]);
+        assert_eq!(
+            build_argv(&r).unwrap(),
+            ["kit", "update", "--target", "claude,codex", "/p", "--select", "unity/rules/z-unity-core.md,general/skills/z-ste", "--json"]
+        );
+    }
+
+    #[test]
+    fn select_with_tiers_or_no_tiers_is_rejected() {
+        let mut r = selecting(Action::Install, Scope::Global, &[ID_A]);
+        r.tiers = vec!["general".into()];
+        assert!(build_argv(&r).unwrap_err().contains("cannot be combined"));
+        let mut r = selecting(Action::Update, Scope::Project("/p".into()), &[ID_A]);
+        r.no_tiers = vec!["luna".into()];
+        assert!(build_argv(&r).is_err());
+    }
+
+    #[test]
+    fn select_is_for_install_and_update_only() {
+        for action in [Action::Check, Action::Uninstall] {
+            assert!(build_argv(&selecting(action, Scope::Global, &[ID_A])).is_err());
         }
-        fs::create_dir_all(current.join("ffff00/package/agents/tiers/stale")).unwrap();
-        fs::write(current.join("cache.json"), r#"{"id":"abc123"}"#).unwrap();
-        let other = root.join("src2/beta");
-        fs::create_dir_all(other.join("dd/package/agents/tiers/luna")).unwrap();
-        fs::write(other.join("cache.json"), r#"{"id":"dd"}"#).unwrap();
-        fs::create_dir_all(root.join("src3/stable/x/package/agents/tiers/evil")).unwrap();
-        fs::write(root.join("src3/stable/cache.json"), r#"{"id":"../x"}"#).unwrap();
-        assert_eq!(cached_tiers(&root), ["general", "luna", "unity"]);
-        assert!(cached_tiers(&root.join("missing")).is_empty());
-        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bad_item_ids_are_rejected() {
+        for bad in [
+            "",
+            "general",
+            "general/skills",
+            "general/skills/z-a/extra",
+            "general/tools/z-a",
+            "general/skills/ste",
+            "general/skills/z-A",
+            "general/skills/z-a b",
+            "general/skills/z-a.txt",
+            "-general/skills/z-a",
+            "gen eral/skills/z-a",
+            "--force",
+        ] {
+            let r = selecting(Action::Update, Scope::Project("/p".into()), &[ID_A, bad]);
+            assert!(build_argv(&r).is_err(), "{bad:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn follow_argv_and_no_follow_argv() {
+        let mut r = req(Action::Install, Scope::Project("/p".into()));
+        r.targets = vec!["codex".into()];
+        r.tiers.clear();
+        r.follow = Some("claude".into());
+        assert_eq!(
+            build_argv(&r).unwrap(),
+            ["kit", "install", "--target", "codex", "/p", "--follow", "claude", "--json"]
+        );
+        r.follow = None;
+        r.no_follow = true;
+        r.action = Action::Update;
+        assert_eq!(
+            build_argv(&r).unwrap(),
+            ["kit", "update", "--target", "codex", "/p", "--no-follow", "--json"]
+        );
+    }
+
+    #[test]
+    fn follow_rules() {
+        let mut r = req(Action::Update, Scope::Project("/p".into()));
+        r.tiers.clear();
+        r.follow = Some("claude".into());
+        assert!(build_argv(&r).unwrap_err().contains("exactly one target"));
+        r.targets = vec!["claude".into()];
+        assert!(build_argv(&r).unwrap_err().contains("itself"));
+        r.targets = vec!["codex".into()];
+        r.follow = Some("omp".into());
+        assert!(build_argv(&r).is_err());
+        r.follow = Some("claude".into());
+        r.no_follow = true;
+        assert!(build_argv(&r).unwrap_err().contains("exclude each other"));
+        r.no_follow = false;
+        r.action = Action::Check;
+        assert!(build_argv(&r).is_err());
+        r.follow = None;
+        r.no_follow = true;
+        r.action = Action::Uninstall;
+        assert!(build_argv(&r).is_err());
+    }
+
+    #[test]
+    fn global_scope_tiers_are_required_for_install_only() {
+        for action in [Action::Check, Action::Update, Action::Uninstall] {
+            let mut r = req(action, Scope::Global);
+            r.tiers.clear();
+            assert_eq!(
+                build_argv(&r).unwrap(),
+                ["kit", action.as_str(), "--target", "claude,codex", "--global", "--json"]
+            );
+        }
+        let mut r = req(Action::Install, Scope::Global);
+        r.tiers.clear();
+        assert!(build_argv(&r).is_err());
+        assert!(build_argv(&selecting(Action::Install, Scope::Global, &[ID_A])).is_ok());
+    }
+
+    #[test]
+    fn request_defaults_for_the_new_fields() {
+        let r: KitRequest = serde_json::from_str(
+            r#"{"action":"update","targets":["codex"],"tiers":[],"select":["general/skills/z-ste"],"follow":"claude","scope":{"kind":"global"},"dry_run":false}"#,
+        )
+        .unwrap();
+        assert_eq!(r.select, ["general/skills/z-ste"]);
+        assert_eq!(r.follow.as_deref(), Some("claude"));
+        assert!(!r.no_follow);
+        let old: KitRequest =
+            serde_json::from_str(r#"{"action":"update","targets":["claude"],"tiers":["general"],"scope":{"kind":"global"},"dry_run":true}"#).unwrap();
+        assert!(old.select.is_empty() && old.follow.is_none() && !old.no_follow);
+    }
+
+    #[test]
+    fn inventory_argv_for_both_scopes() {
+        assert_eq!(
+            inventory_argv(&Scope::Global).unwrap(),
+            ["kit", "inventory", "--target", "claude,codex", "--global", "--json"]
+        );
+        assert_eq!(
+            inventory_argv(&Scope::Project(" /work/app ".into())).unwrap(),
+            ["kit", "inventory", "--target", "claude,codex", "/work/app", "--json"]
+        );
+        assert!(inventory_argv(&Scope::Project("".into())).is_err());
+        assert!(inventory_argv(&Scope::Project("--global".into())).is_err());
     }
 }

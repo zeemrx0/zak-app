@@ -32,10 +32,10 @@ async fn kit_run(request: kit::KitRequest) -> Result<kit::RunResult, String> {
     blocking(move || kit::run(&request)).await
 }
 
-/// Tier names offered by the kit releases the zak CLI has cached.
+/// Items, requirements, digest and per-host selection for one scope, from `zak kit inventory`.
 #[tauri::command]
-async fn kit_tiers() -> Result<Vec<String>, String> {
-    blocking(|| Ok(kit::available_tiers())).await
+async fn kit_inventory(scope: kit::Scope) -> Result<Value, String> {
+    blocking(move || kit::inventory(&scope)).await
 }
 
 #[tauri::command]
@@ -121,7 +121,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             kit_run,
-            kit_tiers,
+            kit_inventory,
             kit_source_get,
             kit_source_set,
             tool_status,

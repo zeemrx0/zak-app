@@ -8,7 +8,7 @@
     "core:window:allow-start-dragging",
     "dialog:allow-open",
     "allow-kit-run",
-    "allow-kit-tiers",
+    "allow-kit-inventory",
     "allow-kit-source-get",
     "allow-kit-source-set",
     "allow-tool-status",
