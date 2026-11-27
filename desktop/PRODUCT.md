@@ -23,7 +23,7 @@ installed, test local kit sources before publishing, and tune per-agent models o
 
 One window to see and change the state of the zak agent kit on this machine:
 
-1. Kit health and updates: installed version, tiers and drift for each host (`claude`, `codex`), global and per
+1. Kit health and updates: installed version, items and drift for each host (`claude`, `codex`), global and per
    project, with a preview before any change.
 2. Agent models: edit `~/.zak/agents.json` (model chain, effort, inherit) for every known agent.
 3. Templates: edit the `z-unity-setup` git and layout templates the kit writes into projects.
@@ -43,7 +43,8 @@ It is a front end for the same commands the maintainer already trusts. Every cha
 - Used next to a terminal, Claude Code, Codex and the Orca app, often while testing a local kit folder.
 - Global installs keep a lock file at `~/.claude/zak-lock.json` and `${CODEX_HOME:-~/.codex}/zak-lock.json`;
   project installs at `<project>/.claude/zak-lock.json` and `<project>/.codex/zak-lock.json`. The lock records
-  `kitVersion` and `tiers`.
+  `kitVersion` and `tiers`, plus `selectedResources` (the checked items) and `follows` (the host it copies) when set.
+- The item catalog comes from `zak kit inventory`, which reads the local kit folder.
 - `zak kit update|check` with a tier list that differs from the installed tiers plans to remove the missing tiers.
 
 ## Capabilities and Constraints

@@ -10,24 +10,29 @@ shows the `zak` and `node` versions. Click it for the tool paths and whether the
 
 - **This Mac and project pages.** One card per agent (Claude Code, Codex), stacked vertically, so a new agent adds a
   card below. The card head shows the agent, the kit version from its `zak-lock.json` and a state: Not checked,
-  Checking…, In sync, N changes, Lock update (no file changes, but the lock file needs an update), Tiers changed
-  (staged switches differ from the lock), Install staged, Not installed or Check failed. Check runs once per location
+  Checking…, In sync, N changes, Lock update (no file changes, but the lock file needs an update), Items changed
+  (staged edits differ from the lock), Install staged, Not installed or Check failed. Check runs once per location
   when you first open it, and again from the Check button. Once a location has been checked, its sidebar item shows
   a green, amber or red dot.
-  Below the head is one switch per tier. The list is every tier the kit offers, read from the kit releases the `zak`
-  CLI has cached (`zak-kit-cache`), plus any tier a lock records. Switches start at what the lock records and only
-  stage changes: a blue mark flags each staged tier, and the card foot names them ("Install unity. Uninstall luna.")
-  next to Revert and "Apply N Changes…", which opens the plan sheet for that agent only. An agent with a lock is
-  updated with its new tier list (on a project the dropped tiers are also sent as `--no-tier`); an agent without one
-  is installed. On This Mac an agent's first tier brings `general` with it, because the global tier list is exact.
-  The last tier on an installed agent cannot be switched off; use Uninstall… under More. With nothing staged, the
-  foot offers Update…, which updates every installed tier on that agent. Before any kit has been downloaded, only
-  `general` and installed tiers are listed.
-  Every kit operation runs once per host, because hosts can carry different tiers.
+  Below the head is a tree: tier, then kind (Rules, Skills, Agents), then item. Each row has a disclosure button and
+  a checkbox. Tier and kind rows are tri-state and show "N of M". The catalog comes from `zak kit inventory`, which
+  reads the local kit folder, so it needs a kit source (the page offers "Open Kit Source" when none is set). Only
+  checked items install. `general` is a normal tier, and nothing adds it for you. When you check an item, the app
+  also checks the items it requires. Those rows read "required by X" and stay locked while X is checked.
+  The tree starts at what the lock records and only stages changes: a blue mark flags each staged item, and the
+  card foot names them ("Install 3 items. Remove 1 item.") next to Revert and "Apply N Changes…", which opens the
+  plan sheet for that agent only. An agent with a lock is updated with its new item list. An agent without one is
+  installed. Apply stays disabled when an installed agent would have no checked item. Use Uninstall… under More to
+  remove the kit. With nothing staged, the foot offers Update…, which keeps the saved item list.
+  A "Same as <other agent>" switch makes an agent follow the other one. The follower's tree becomes a read-only line
+  ("Follows Claude Code. 14 of 22 items."), and the link is saved as `follows` in the follower's lock. The switch is
+  disabled until the other agent is installed, and on a source that another agent follows. Switching it off stages
+  an unlink, and the agent keeps its current items. An Apply or Update on a source also updates its followers.
+  Check never changes the link. Every kit operation runs once per host, because hosts can carry different items.
 - **Plan sheet.** Update…, and Install… and Uninstall… under More, first run a dry run and open a sheet that lists the
   planned operations per host, grouped by action (removals first, in red, always expanded) and by folder (two
   path segments, for example `skills/<name>/`), with counts. Global paths are shown relative to the host root.
-  Each host header also shows the tier change against its lock, for example "Tiers: −luna, +foo". The commit
+  Each host header also shows the item change against its lock, for example "Items: −z-foo, +z-bar", and a line for a link change. When the kit changes after the page loaded, the sheet stops with "The kit changed after this page loaded. Review the tree, then apply again." The commit
   button names the counts, for example "Update 12 files", "Remove 97 files" or "Update 23 files, remove 97".
   A plan with no file changes but a lock change reads "Update lock file". The button stays disabled when the plan
   is empty, when a command fails, or when the plan reports conflicts or issues. Only the commit button runs the
@@ -149,6 +154,7 @@ cd desktop/src-tauri
 cargo test
 cargo clippy --all-targets -- -D warnings
 for f in ../ui/*.js; do node --check "$f" || echo "FAIL $f"; done   # syntax check of the frontend scripts
+node --test ../tests/install-tree.test.cjs   # tree logic
 ```
 
 The integration test runs the real `z-delegate settings` commands against a temporary config (through `Z_AGENTS_CONFIG`)
@@ -159,7 +165,8 @@ when `node` or `z-delegate.cjs` is missing. It never touches your real config.
 
 | Command | Used for |
 | --- | --- |
-| `zak kit <check\|install\|update\|uninstall> --target <t> (--global \| <project>) [--tier <list>] [--no-tier <list>] [--dry-run] --json` (`--no-tier` for projects only) | Install pages and plan sheet. stdin is closed, so it never waits for a prompt. |
+| `zak kit <check\|install\|update\|uninstall> --target <t> (--global \| <project>) [--tier <list>] [--no-tier <list>] [--select <ids>] [--follow <host> \| --no-follow] [--dry-run] --json` (`--no-tier` for projects only, `--select` and the follow flags for install and update) | Install pages and plan sheet. stdin is closed, so it never waits for a prompt. |
+| `zak kit inventory --target claude,codex (--global \| <project>) --json` | Item catalog and per-host state for the tree. Read-only. |
 | `zak kit source` and `zak kit source <path>` | Show and set the local kit folder. |
 | `zak --version`, `node --version` | Tool status. |
 | `node z-delegate.cjs settings state`, `settings preview` and `settings save` (JSON on stdin, one JSON object on stdout) | Agent Models. One process per request; nothing keeps running. |

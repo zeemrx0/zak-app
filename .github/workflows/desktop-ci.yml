@@ -42,3 +42,5 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Check frontend scripts
         run: for f in desktop/ui/*.js; do node --check "$f" || exit 1; done
+      - name: Test install tree logic
+        run: node --test desktop/tests/install-tree.test.cjs
